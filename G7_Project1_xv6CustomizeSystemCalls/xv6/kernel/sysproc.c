@@ -107,3 +107,90 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+
+// message passing between processes --gaurav
+uint64
+sys_sendmsg(void)
+{
+  int pid, len;
+  uint64 msg_ptr;
+
+  argint(0, &pid);
+  argaddr(1, &msg_ptr);
+  argint(2, &len);
+
+  if(len > MSGSIZE) return -1;
+
+  struct proc *target = find_proc(pid);
+  if(target == 0) return -1;
+
+  struct proc *p = myproc();
+
+  acquire(&target->msg_lock);
+
+  if(target->msg_count == MAXMSG){
+      release(&target->msg_lock);
+      return -1; // queue full
+  }
+
+  struct message *m = &target->msg_queue[target->msg_tail];
+
+  m->src_pid = p->pid;
+  m->len = len;
+
+  if(copyin(p->pagetable, m->data, msg_ptr, len) < 0){
+      release(&target->msg_lock);
+      return -1;
+  }
+
+  target->msg_tail = (target->msg_tail + 1) % MAXMSG;
+  target->msg_count++;
+
+  wakeup(target);  // wake receiver if sleeping
+
+  release(&target->msg_lock);
+
+  return 0;
+}
+
+uint64
+sys_recvmsg(void)
+{
+    uint64 src_pid_ptr, buf_ptr;
+    int maxlen;
+
+    argaddr(0, &src_pid_ptr);
+    argaddr(1, &buf_ptr);
+    argint(2, &maxlen);
+
+    struct proc *p = myproc();
+
+    acquire(&p->msg_lock);
+
+    while(p->msg_count == 0){
+        sleep(p, &p->msg_lock);  // block until message arrives
+    }
+
+    struct message *m = &p->msg_queue[p->msg_head];
+
+    int len = m->len;
+    if(len > maxlen) len = maxlen;
+
+    if(copyout(p->pagetable, buf_ptr, m->data, len) < 0){
+        release(&p->msg_lock);
+        return -1;
+    }
+
+    if(copyout(p->pagetable, src_pid_ptr, (char*)&m->src_pid, sizeof(int)) < 0){
+        release(&p->msg_lock);
+        return -1;
+    }
+
+    p->msg_head = (p->msg_head + 1) % MAXMSG;
+    p->msg_count--;
+
+    release(&p->msg_lock);
+
+    return len;
+}

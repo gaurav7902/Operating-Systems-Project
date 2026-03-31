@@ -42,3 +42,6 @@ entry("getpid");
 entry("sbrk");
 entry("pause");
 entry("uptime");
+#//message passsing --gaurav
+entry("sendmsg");
+entry("recvmsg");

@@ -124,6 +124,11 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
+  //for message passing --gaurav
+  p->msg_head = 0;
+  p->msg_tail = 0;
+  p->msg_count = 0;
+  initlock(&p->msg_lock, "msglock");
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -147,6 +152,22 @@ found:
   p->context.sp = p->kstack + PGSIZE;
 
   return p;
+}
+
+struct proc*
+find_proc(int pid)
+{
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->pid == pid && p->state != UNUSED){
+      release(&p->lock);  // release before returning
+      return p;
+    }
+    release(&p->lock);
+  }
+  return 0;
 }
 
 // free a proc structure and the data hanging from it,

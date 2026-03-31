@@ -47,3 +47,6 @@ void printf(const char*, ...) __attribute__ ((format (printf, 1, 2)));
 // umalloc.c
 void* malloc(uint);
 void free(void*);
+//message passsing --gaurav
+int sendmsg(int pid, void *msg, int len);
+int recvmsg(int *src_pid, void *buf, int maxlen);

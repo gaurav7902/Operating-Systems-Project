@@ -147,6 +147,8 @@ UPROGS=\
 	$U/_dorphan\
 	$U/_msgtest\
 
+UPROGS += user/_testproc
+
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)
 

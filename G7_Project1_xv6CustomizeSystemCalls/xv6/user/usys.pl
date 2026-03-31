@@ -42,6 +42,12 @@ entry("getpid");
 entry("sbrk");
 entry("pause");
 entry("uptime");
+# Generate user-level assembly stub for getppid syscall
+# This connects user function to kernel syscall interface
+entry("getppid");
+# Generate syscall stub
+entry("getprocinfo");
+
 #//message passsing --gaurav
 entry("sendmsg");
 entry("recvmsg");

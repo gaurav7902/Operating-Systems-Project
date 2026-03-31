@@ -1,5 +1,14 @@
 #define SBRK_ERROR ((char *)-1)
 
+// Same structure must exist in user space
+struct procinfo {
+    int pid;
+    int state;
+    int sz;
+    int parent_pid;
+    int priority;
+};
+
 struct stat;
 
 // system calls
@@ -24,6 +33,11 @@ int getpid(void);
 char* sys_sbrk(int,int);
 int pause(int);
 int uptime(void);
+// User-level declaration of getppid syscall
+// Allows user programs to call getppid()
+int getppid(void);
+// User-level syscall declaration
+int getprocinfo(int, struct procinfo *);
 
 // ulib.c
 int stat(const char*, struct stat*);

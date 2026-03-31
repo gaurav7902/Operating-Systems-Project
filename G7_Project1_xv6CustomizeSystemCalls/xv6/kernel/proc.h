@@ -103,6 +103,7 @@ struct proc {
   int killed;                  // If non-zero, have been killed
   int xstate;                  // Exit status to be returned to parent's wait
   int pid;                     // Process ID
+  int priority;
 
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
@@ -123,4 +124,14 @@ struct proc {
   int msg_head;
   int msg_tail;
   int msg_count;
+};
+
+// Structure to store process information
+// This will be copied from kernel → user space
+struct procinfo {
+    int pid;      // process ID
+    int state;    // process state (RUNNING, SLEEPING, etc.)
+    int sz;       // memory size of process
+    int parent_pid;
+    int priority;
 };

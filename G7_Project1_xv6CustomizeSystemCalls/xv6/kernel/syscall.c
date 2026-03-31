@@ -101,6 +101,10 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
+// Declare the kernel handler function for getppid syscall
+extern uint64 sys_getppid(void);
+// Declare handler
+extern uint64 sys_getprocinfo(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -115,6 +119,11 @@ static uint64 (*syscalls[])(void) = {
 [SYS_fstat]   sys_fstat,
 [SYS_chdir]   sys_chdir,
 [SYS_dup]     sys_dup,
+// Map syscall number to corresponding handler function
+// When user calls getppid(), control reaches sys_getppid()
+[SYS_getppid] sys_getppid,
+// Map syscall number → handler
+[SYS_getprocinfo] sys_getprocinfo,
 [SYS_getpid]  sys_getpid,
 [SYS_sbrk]    sys_sbrk,
 [SYS_pause]   sys_pause,

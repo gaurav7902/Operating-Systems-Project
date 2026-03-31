@@ -20,3 +20,8 @@
 #define SYS_link   19
 #define SYS_mkdir  20
 #define SYS_close  21
+// Assign a unique syscall number for getppid
+// This number is used to identify the syscall from user space
+#define SYS_getppid 22
+// Unique syscall number for getprocinfo
+#define SYS_getprocinfo 23

@@ -146,7 +146,7 @@ UPROGS=\
 	$U/_forphan\
 	$U/_dorphan\
 
-UPROGS += user/_testproc
+UPROGS += user/_getprocinfo
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

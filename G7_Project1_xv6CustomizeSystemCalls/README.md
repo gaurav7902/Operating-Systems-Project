@@ -1,21 +1,26 @@
-# Alarm Signal — xv6 Custom System Call Project
-
-**Author:** Sathish  
-**Branch:** `sathish-alarm-feature`  
+# Alarm Signal — xv6 Custom System Call Project  
 **Theme:** Kernel-level Process Control and Signal Handling
-
 ---
-
 ## Project Overview
-
 This project implements the **`alarm_signal(int ticks, void (*handler)())`** system call in the xv6 operating system. It bridges the gap between hardware timer interrupts and user-space execution by allowing a process to register a callback function that the kernel automatically invokes after a specified number of timer ticks.
 
-### What It Does
+### What Does This Project Do? (Simple Explanation)
 
-- A user process calls `alarm_signal(N, handler_fn)` to register a timer alarm
-- Every `N` timer ticks, the kernel **diverts the process's execution** to `handler_fn`
-- The handler calls `alarm_return()` to **restore the original execution state**
-- The alarm repeats automatically until disabled with `alarm_signal(0, 0)`
+Imagine you set a kitchen timer for 5 minutes. You go back to cooking (your main work). When the timer rings, you stop cooking, go check the oven (your handler task), and then return to cooking exactly where you left off.
+
+**That is exactly what `alarm_signal` does — but inside an operating system:**
+
+1. A user program tells the kernel: *"Every 5 timer ticks, call this function for me."*
+2. The kernel keeps counting ticks in the background while the program runs normally.
+3. When 5 ticks pass, the kernel **pauses** the program, **runs the handler function**, and then **resumes** the program as if nothing happened.
+4. This repeats automatically. To stop it, the program calls `alarm_signal(0, 0)`.
+
+### Key Terms
+
+- **Tick** — One hardware timer interrupt. The CPU generates these at a fixed rate (~10 per second in xv6). Each tick is the kernel's "heartbeat."
+- **Firing** — When the alarm "goes off." After counting down the specified number of ticks, the alarm **fires** — meaning the kernel redirects the process to run the handler function. Each firing produces one `>>> ALARM FIRED! <<<` message.
+- **Busy Loop** — A loop that keeps the CPU busy doing nothing useful (`while(condition) {}`). The test program uses this to keep the process running while waiting for the timer to fire. Without a busy loop, the program would exit before any alarms could fire.
+- **Handler** — A user-written function that the kernel calls when the alarm fires. It must call `alarm_return()` at the end to go back to the main program.
 
 ---
 
@@ -38,18 +43,67 @@ This project implements the **`alarm_signal(int ticks, void (*handler)())`** sys
 
 ---
 
-## How It Works — Technical Explanation
+## Overall Process — Step by Step
 
-### The Problem
+Here is the complete flow of how the alarm works from start to finish:
 
-When a timer interrupt occurs, the CPU stops the user process and enters the kernel via `usertrap()`. The kernel needs to:
-1. **Count ticks** for each process that has an alarm set
-2. When the countdown hits zero, **redirect the process to the handler** without losing the original execution state
-3. After the handler finishes, **resume the process exactly where it was interrupted**
+### Step 1: User Program Registers the Alarm
+```c
+alarm_signal(5, alarm_handler);  // "Call alarm_handler every 5 ticks"
+```
+The kernel stores these values inside the process's `struct proc`:
+- `alarm_interval = 5` (the repeat interval)
+- `alarm_handler = address of alarm_handler function`
+- `alarm_ticks_left = 5` (countdown starts)
 
-### The Solution: Trapframe Save/Restore
+### Step 2: Program Continues Running (Busy Loop)
+```c
+while (alarm_count < 3) {
+    // The program spins here doing nothing.
+    // Meanwhile, the hardware timer keeps ticking.
+}
+```
+The program runs this loop normally. Every ~0.1 seconds, a **timer interrupt** fires and the CPU enters the kernel.
 
-The key insight is the **trapframe** — a data structure that holds all 32 CPU registers plus the program counter (`epc`). Here's the flow:
+### Step 3: Kernel Counts Down on Each Timer Tick
+Inside `usertrap()` in `kernel/trap.c`, on every timer interrupt:
+```
+tick 1: alarm_ticks_left = 4  → not yet, keep going
+tick 2: alarm_ticks_left = 3  → not yet
+tick 3: alarm_ticks_left = 2  → not yet
+tick 4: alarm_ticks_left = 1  → not yet
+tick 5: alarm_ticks_left = 0  → ALARM FIRES!
+```
+
+### Step 4: Alarm Fires — Kernel Saves State and Redirects
+When the countdown reaches 0:
+1. The kernel **saves the entire trapframe** (all 32 CPU registers + program counter) into `alarm_saved_tf`
+2. The kernel **overwrites the program counter** (`epc`) to point to `alarm_handler`
+3. Sets `alarm_active = 1` to prevent double-firing
+4. Returns to user space → the CPU now executes `alarm_handler` instead of the busy loop
+
+### Step 5: Handler Runs and Returns
+```c
+void alarm_handler(void) {
+    alarm_count++;                                          // Increment counter
+    printf(">>> ALARM FIRED! (count = %d) <<<\n", alarm_count); // Print message
+    alarm_return();                                         // Tell kernel: "I'm done"
+}
+```
+When `alarm_return()` is called:
+1. The kernel **restores the saved trapframe** back into the process
+2. Resets `alarm_ticks_left = 5` (start counting again)
+3. Clears `alarm_active = 0` (allow future alarms)
+4. The process **resumes the busy loop** exactly where it was interrupted
+
+### Step 6: Repeat
+The cycle repeats. After 5 more ticks, the alarm fires again (count = 2), then again (count = 3). When `alarm_count` reaches 3, the busy loop's condition `alarm_count < 3` becomes false, and the program moves on to Test 2.
+
+---
+
+## How the Kernel Does It — Trapframe Save/Restore
+
+The **trapframe** is the critical data structure. It holds all 32 CPU registers and the program counter. Here's the flow diagram:
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
@@ -69,7 +123,7 @@ The key insight is the **trapframe** — a data structure that holds all 32 CPU 
                               ▼
 ┌─────────────────────────────────────────────────────────────┐
 │  User: alarm_handler() executes                             │
-│  - Prints message, does work                                │
+│  - Prints ">>> ALARM FIRED! <<<" message                    │
 │  - Calls alarm_return()                                     │
 └─────────────────────────────┬───────────────────────────────┘
                               │ System call
@@ -95,20 +149,20 @@ Without this guard flag, if the alarm handler takes longer than `N` ticks to exe
 
 ---
 
-## Files Modified
+## Files Modified and What Each Change Does
 
-| File | Change |
-|------|--------|
-| `kernel/proc.h` | Added 5 alarm fields to `struct proc` |
-| `kernel/proc.c` | Initialize alarm in `allocproc()`, cleanup in `freeproc()`, copy in `kfork()` |
-| `kernel/syscall.h` | Added `SYS_alarm_signal` (22) and `SYS_alarm_return` (23) |
-| `kernel/syscall.c` | Registered both system calls in the dispatch table |
-| `kernel/sysproc.c` | Implemented `sys_alarm_signal()` and `sys_alarm_return()` handlers |
-| `kernel/trap.c` | Added alarm tick countdown and trapframe save/redirect in `usertrap()` |
-| `user/user.h` | Added user-space function declarations |
-| `user/usys.pl` | Added assembly stub entries |
-| `user/alarm_test.c` | **NEW** — Test program demonstrating the alarm signal |
-| `Makefile` | Added `_alarm_test` to `UPROGS` |
+| # | File | What Was Changed | Why |
+|---|------|-----------------|-----|
+| 1 | `kernel/proc.h` | Added 5 new fields to `struct proc` | Each process needs its own alarm state (interval, handler, countdown, guard flag, saved registers) |
+| 2 | `kernel/proc.c` | Initialize alarm fields in `allocproc()`, cleanup in `freeproc()`, copy in `kfork()` | When a process is created, its alarm must start as disabled; when it forks, the child inherits the alarm; when it exits, the alarm memory must be freed |
+| 3 | `kernel/syscall.h` | Added `#define SYS_alarm_signal 22` and `#define SYS_alarm_return 23` | Every system call needs a unique number so the kernel can identify which call the user is making |
+| 4 | `kernel/syscall.c` | Added `sys_alarm_signal` and `sys_alarm_return` to the dispatch table | The kernel uses this table to map system call numbers to their handler functions |
+| 5 | `kernel/sysproc.c` | Implemented `sys_alarm_signal()` and `sys_alarm_return()` functions | These are the actual kernel functions that set up the alarm and restore the trapframe |
+| 6 | `kernel/trap.c` | Added alarm countdown + trapframe save/redirect logic in `usertrap()` | This is the **core logic** — on every timer tick, check if alarm should fire and redirect the process |
+| 7 | `user/user.h` | Added function declarations for `alarm_signal()` and `alarm_return()` | User programs need to know these functions exist so they can call them |
+| 8 | `user/usys.pl` | Added assembly stub entries | Generates the assembly code that makes the actual `ecall` instruction to enter the kernel |
+| 9 | `user/alarm_test.c` | **NEW FILE** — Test program with 3 tests | Demonstrates and validates the alarm system call works correctly |
+| 10 | `Makefile` | Added `_alarm_test` to `UPROGS` list | Tells the build system to compile the test program and include it in the xv6 disk image |
 
 ---
 
@@ -127,6 +181,8 @@ struct trapframe *alarm_saved_tf; // Saved trapframe for alarm_return()
 
 ### 2. Alarm Check in `usertrap()` (`kernel/trap.c`)
 
+This is the **most important code** — it runs on every timer interrupt:
+
 ```c
 // On every timer tick, check if this process has a pending alarm.
 if(which_dev == 2 && p->alarm_interval > 0 && p->alarm_active == 0) {
@@ -142,35 +198,91 @@ if(which_dev == 2 && p->alarm_interval > 0 && p->alarm_active == 0) {
 }
 ```
 
+**Line-by-line explanation:**
+- `which_dev == 2` → This was a timer interrupt (not keyboard or disk)
+- `p->alarm_interval > 0` → This process has an alarm set
+- `p->alarm_active == 0` → The handler is not already running
+- `p->alarm_ticks_left--` → Count down one tick
+- `memmove(...)` → Copy all registers to the backup
+- `p->trapframe->epc = p->alarm_handler` → Change where the process will resume — instead of returning to the busy loop, it will jump to the handler
+- `p->alarm_active = 1` → Block further alarms until handler finishes
+
 ### 3. Trapframe Restore in `sys_alarm_return()` (`kernel/sysproc.c`)
 
 ```c
 uint64 sys_alarm_return(void) {
   struct proc *p = myproc();
+  // Copy the saved registers back, restoring the exact CPU state
   memmove(p->trapframe, p->alarm_saved_tf, sizeof(struct trapframe));
+  // Start counting ticks again for the next alarm
   p->alarm_ticks_left = p->alarm_interval;
+  // Allow alarms to fire again
   p->alarm_active = 0;
   return p->trapframe->a0;
 }
 ```
 
+### 4. The Alarm Handler in User Space (`user/alarm_test.c`)
+
+This is the code that prints `">>> ALARM FIRED! (count = 1) <<<"`:
+
+```c
+// Global counter — starts at 0, incremented each time the alarm fires
+volatile int alarm_count = 0;
+
+void alarm_handler(void)
+{
+  alarm_count++;    // 0→1 on first firing, 1→2 on second, 2→3 on third
+  printf(">>> ALARM FIRED! (count = %d) <<<\n", alarm_count);
+  alarm_return();   // MUST call this — tells kernel to restore saved state
+}
+```
+
+**How the count works:**
+- The variable `alarm_count` is **global** and marked `volatile` (so the compiler doesn't optimize away reads from it)
+- First alarm firing: `alarm_count` goes from 0 → 1, prints `count = 1`
+- Second alarm firing: `alarm_count` goes from 1 → 2, prints `count = 2`
+- Third alarm firing: `alarm_count` goes from 2 → 3, prints `count = 3`
+- The main busy loop checks `while (alarm_count < 3)` — once count reaches 3, the loop exits
+
 ---
 
-## Test Program — `alarm_test.c`
+## Test Program — Detailed Explanation
 
-The test program runs 3 tests:
+### Test 1: Periodic Alarm (5-tick interval, 3 firings)
+```c
+alarm_signal(5, alarm_handler);    // Set alarm for every 5 ticks
+while (alarm_count < 3) { }       // Busy loop — wait for 3 firings
+```
+- **Why 3 firings?** We chose 3 to prove the alarm is **repeating** — it's not a one-time event. After each firing, `alarm_return()` resets the countdown and the alarm fires again. Three firings prove the cycle works correctly.
 
-| Test | Description | Expected Result |
-|------|-------------|-----------------|
-| **Test 1** | Set alarm with 5-tick interval, wait for 3 firings | Handler prints 3 times, busy loop continues |
-| **Test 2** | Disable alarm with `alarm_signal(0, 0)`, spin | No alarm fires after disabling |
-| **Test 3** | Re-enable with 10-tick interval, wait for 2 firings | Handler fires with the new interval |
+### Test 2: Disabling the Alarm
+```c
+alarm_signal(0, 0);                // Disable — set interval to 0
+for (int i = 0; i < 500000000; i++) { }  // Spin for a long time
+```
+- After disabling, we spin for a long time. If no alarm fires during this period, the disable works correctly.
+
+### Test 3: Different Interval (10-tick interval, 2 firings)
+```c
+alarm_signal(10, alarm_handler);   // Re-enable with 10 ticks
+while (alarm_count < target) { }   // Wait for 2 more firings
+```
+- **Why only 2 firings for Test 3?** Because we already proved the alarm repeats in Test 1 (3 firings). Test 3's purpose is different — it proves the system call works with **any tick value**, not just 5. Two firings is enough to confirm the 10-tick interval works. The alarm count continues from where it left off (count 4 and 5).
 
 ---
 
 ## Execution Screenshot
 
+The screenshot below shows `alarm_test` running inside xv6 on QEMU. All 3 tests pass successfully:
+
 ![alarm_test output showing all 3 tests passing in QEMU](alarm_test_output.png)
+
+**What the output shows:**
+- **Test 1**: Three `>>> ALARM FIRED! <<<` messages appear at count 1, 2, 3 — proving the 5-tick periodic alarm works
+- **Test 2**: No alarm messages appear — proving the alarm was successfully disabled
+- **Test 3**: Two more `>>> ALARM FIRED! <<<` messages at count 4, 5 — proving the 10-tick interval works
+- **Final line**: `ALL TESTS PASSED! alarm_signal works!`
 
 ---
 
@@ -187,8 +299,6 @@ make qemu CPUS=1
 # Inside xv6 shell, run the test
 $ alarm_test
 ```
-
----
 
 ## Five System Call Functionalities Covered
 

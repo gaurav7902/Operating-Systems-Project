@@ -140,6 +140,19 @@ found:
     return 0;
   }
 
+  // Allocate a page for the saved alarm trapframe.
+  if((p->alarm_saved_tf = (struct trapframe *)kalloc()) == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  // Initialize alarm fields.
+  p->alarm_interval = 0;
+  p->alarm_handler = 0;
+  p->alarm_ticks_left = 0;
+  p->alarm_active = 0;
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -158,6 +171,9 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  if(p->alarm_saved_tf)
+    kfree((void*)p->alarm_saved_tf);
+  p->alarm_saved_tf = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -168,6 +184,10 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  p->alarm_interval = 0;
+  p->alarm_handler = 0;
+  p->alarm_ticks_left = 0;
+  p->alarm_active = 0;
   p->state = UNUSED;
 }
 
@@ -278,6 +298,12 @@ kfork(void)
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
+
+  // Copy alarm state from parent to child.
+  np->alarm_interval = p->alarm_interval;
+  np->alarm_handler = p->alarm_handler;
+  np->alarm_ticks_left = p->alarm_ticks_left;
+  np->alarm_active = 0;  // child starts with no active handler
 
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;

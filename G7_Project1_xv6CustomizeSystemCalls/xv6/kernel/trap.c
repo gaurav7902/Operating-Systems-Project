@@ -84,6 +84,22 @@ usertrap(void)
   if(which_dev == 2)
     yield();
 
+  // ---- Alarm signal check ----
+  // On every timer tick, check if this process has a pending alarm.
+  // If the countdown reaches zero, save the current trapframe and
+  // divert execution to the user's alarm handler.
+  if(which_dev == 2 && p->alarm_interval > 0 && p->alarm_active == 0) {
+    p->alarm_ticks_left--;
+    if(p->alarm_ticks_left <= 0) {
+      // Save the entire trapframe so alarm_return() can restore it.
+      memmove(p->alarm_saved_tf, p->trapframe, sizeof(struct trapframe));
+      // Redirect the process to execute the alarm handler.
+      p->trapframe->epc = p->alarm_handler;
+      // Prevent re-entrant alarms while handler is running.
+      p->alarm_active = 1;
+    }
+  }
+
   prepare_return();
 
   // the user page table to switch to, for trampoline.S

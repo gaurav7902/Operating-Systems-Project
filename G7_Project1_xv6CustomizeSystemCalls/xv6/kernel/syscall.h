@@ -20,3 +20,7 @@
 #define SYS_link   19
 #define SYS_mkdir  20
 #define SYS_close  21
+#define SYS_yield_cpu 22  // <-- ADD THIS LINE
+#define SYS_sleep_for 23
+#define SYS_fork_with_limit 24
+#define SYS_set_priority 25

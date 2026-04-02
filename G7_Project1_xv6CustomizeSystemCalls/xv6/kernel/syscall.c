@@ -101,6 +101,10 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
+extern uint64 sys_yield_cpu(void);
+extern uint64 sys_sleep_for(void);
+extern uint64 sys_fork_with_limit(void);
+extern uint64 sys_set_priority(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -126,6 +130,10 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
+[SYS_yield_cpu] sys_yield_cpu,
+[SYS_sleep_for] sys_sleep_for,
+[SYS_fork_with_limit] sys_fork_with_limit,
+[SYS_set_priority] sys_set_priority,
 };
 
 void

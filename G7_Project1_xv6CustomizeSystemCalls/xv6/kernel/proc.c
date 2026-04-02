@@ -123,7 +123,7 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
-  p->priority = 5;
+  p->priority = p->pid % 10;   // assign varying priority
   p->state = USED;
   //for message passing --gaurav
   p->msg_head = 0;

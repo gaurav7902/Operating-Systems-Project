@@ -124,10 +124,10 @@ allocproc(void)
 found:
   p->pid = allocpid();
   p->state = USED;
-  //for message passing --gaurav
-  p->msg_head = 0;
-  p->msg_tail = 0;
-  p->msg_count = 0;
+  // Initialize per-process mailbox state. --gaurav
+  p->mailbox_full = 0;
+  p->mailbox_src_pid = 0;
+  p->mailbox_len = 0;
   initlock(&p->msg_lock, "msglock");
 
   // Allocate a trapframe page.

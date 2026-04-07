@@ -120,34 +120,35 @@ sys_sendmsg(void)
   argaddr(1, &msg_ptr);
   argint(2, &len);
 
-  if(len > MSGSIZE) return -1;
+  if(len < 0 || len > MSGSIZE)
+    return -1;
 
   struct proc *target = find_proc(pid);
-  if(target == 0) return -1;
+  if(target == 0)
+    return -1;
 
   struct proc *p = myproc();
 
   acquire(&target->msg_lock);
 
-  if(target->msg_count == MAXMSG){
-      release(&target->msg_lock);
-      return -1; // queue full
-  }
-
-  struct message *m = &target->msg_queue[target->msg_tail];
-
-  m->src_pid = p->pid;
-  m->len = len;
-
-  if(copyin(p->pagetable, m->data, msg_ptr, len) < 0){
+  while(target->mailbox_full){
+    if(killed(p)){
       release(&target->msg_lock);
       return -1;
+    }
+    sleep(target, &target->msg_lock);
   }
 
-  target->msg_tail = (target->msg_tail + 1) % MAXMSG;
-  target->msg_count++;
+  if(copyin(p->pagetable, target->mailbox_data, msg_ptr, len) < 0){
+    release(&target->msg_lock);
+    return -1;
+  }
 
-  wakeup(target);  // wake receiver if sleeping
+  target->mailbox_src_pid = p->pid;
+  target->mailbox_len = len;
+  target->mailbox_full = 1;
+
+  wakeup(target);  // wake receiver waiting on empty mailbox --gaurav
 
   release(&target->msg_lock);
 
@@ -157,40 +158,47 @@ sys_sendmsg(void)
 uint64
 sys_recvmsg(void)
 {
-    uint64 src_pid_ptr, buf_ptr;
-    int maxlen;
+  uint64 src_pid_ptr, buf_ptr;
+  int maxlen;
 
-    argaddr(0, &src_pid_ptr);
-    argaddr(1, &buf_ptr);
-    argint(2, &maxlen);
+  argaddr(0, &src_pid_ptr);
+  argaddr(1, &buf_ptr);
+  argint(2, &maxlen);
+  if(maxlen < 0)
+    return -1;
 
-    struct proc *p = myproc();
+  struct proc *p = myproc();
 
-    acquire(&p->msg_lock);
+  acquire(&p->msg_lock);
 
-    while(p->msg_count == 0){
-        sleep(p, &p->msg_lock);  // block until message arrives
+  while(p->mailbox_full == 0){
+    if(killed(p)){
+      release(&p->msg_lock);
+      return -1;
     }
+    sleep(p, &p->msg_lock);  // block until a message arrives --gaurav
+  }
 
-    struct message *m = &p->msg_queue[p->msg_head];
+  int len = p->mailbox_len;
+  if(len > maxlen)
+    len = maxlen;
 
-    int len = m->len;
-    if(len > maxlen) len = maxlen;
-
-    if(copyout(p->pagetable, buf_ptr, m->data, len) < 0){
-        release(&p->msg_lock);
-        return -1;
-    }
-
-    if(copyout(p->pagetable, src_pid_ptr, (char*)&m->src_pid, sizeof(int)) < 0){
-        release(&p->msg_lock);
-        return -1;
-    }
-
-    p->msg_head = (p->msg_head + 1) % MAXMSG;
-    p->msg_count--;
-
+  if(copyout(p->pagetable, buf_ptr, p->mailbox_data, len) < 0){
     release(&p->msg_lock);
+    return -1;
+  }
 
-    return len;
+  if(copyout(p->pagetable, src_pid_ptr, (char*)&p->mailbox_src_pid, sizeof(int)) < 0){
+    release(&p->msg_lock);
+    return -1;
+  }
+
+  p->mailbox_full = 0;
+  p->mailbox_len = 0;
+
+  wakeup(p);  // wake blocked sender waiting for free slot --gaurav
+
+  release(&p->msg_lock);
+
+  return len;
 }

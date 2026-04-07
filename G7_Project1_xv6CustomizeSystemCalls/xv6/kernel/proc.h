@@ -83,12 +83,6 @@ enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 //message passing for IPC --gaurav
 #define MSGSIZE 128
-#define MAXMSG  16
-struct message {
-    int src_pid;
-    int len;
-    char data[MSGSIZE];
-};
 
 //funtion declaration to use in message passing --gaurav
 struct proc* find_proc(int pid);
@@ -117,10 +111,10 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
-  //Message queue for IPC --gaurav
+  // Single-slot mailbox for IPC. --gaurav
   struct spinlock msg_lock;
-  struct message msg_queue[MAXMSG];
-  int msg_head;
-  int msg_tail;
-  int msg_count;
+  int mailbox_full;
+  int mailbox_src_pid;
+  int mailbox_len;
+  char mailbox_data[MSGSIZE];
 };

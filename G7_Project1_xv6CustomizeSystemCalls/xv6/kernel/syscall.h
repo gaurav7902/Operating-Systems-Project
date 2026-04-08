@@ -27,3 +27,5 @@
 #define SYS_getprocinfo 23
 #define SYS_recvmsg 24
 #define SYS_sendmsg 25
+#define SYS_alarm_signal 26
+#define SYS_alarm_return 27

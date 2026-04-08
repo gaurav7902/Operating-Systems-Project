@@ -47,6 +47,8 @@ entry("uptime");
 entry("getppid");
 # Generate syscall stub
 entry("getprocinfo");
+entry("alarm_signal");
+entry("alarm_return");
 
 #//message passsing --gaurav
 entry("sendmsg");

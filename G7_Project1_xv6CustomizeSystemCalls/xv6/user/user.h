@@ -38,6 +38,8 @@ int uptime(void);
 int getppid(void);
 // User-level syscall declaration
 int getprocinfo(int, struct procinfo *);
+int alarm_signal(int ticks, void (*handler)());
+int alarm_return(void);
 
 // ulib.c
 int stat(const char*, struct stat*);

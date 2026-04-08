@@ -146,8 +146,8 @@ UPROGS=\
 	$U/_forphan\
 	$U/_dorphan\
 	$U/_mailboxtest\
-
-UPROGS += user/_getprocinfo
+	$U/_getprocinfo\
+	$U/_alarm_test\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

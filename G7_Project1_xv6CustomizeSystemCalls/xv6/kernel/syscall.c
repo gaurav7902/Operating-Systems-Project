@@ -101,6 +101,8 @@ extern uint64 sys_unlink(void);
 extern uint64 sys_link(void);
 extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
+extern uint64 sys_alarm_signal(void);
+extern uint64 sys_alarm_return(void);
 // Declare the kernel handler function for getppid syscall
 extern uint64 sys_getppid(void);
 // Declare handler
@@ -141,6 +143,9 @@ static uint64 (*syscalls[])(void) = {
 //message passsing --gaurav
 [SYS_sendmsg] sys_sendmsg,
 [SYS_recvmsg] sys_recvmsg,
+// alarm --satish
+[SYS_alarm_signal] sys_alarm_signal,
+[SYS_alarm_return] sys_alarm_return,
 };
 
 void

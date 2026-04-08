@@ -112,6 +112,13 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
+  // Alarm signal fields
+  int alarm_interval;            // Timer interval in ticks (0 = disabled)
+  uint64 alarm_handler;          // User-space handler function address
+  int alarm_ticks_left;          // Countdown to next alarm firing
+  int alarm_active;              // Guard: 1 while handler is executing
+  struct trapframe *alarm_saved_tf; // Saved trapframe for alarm_return()
+
   // Single-slot mailbox for IPC. --gaurav
   struct spinlock msg_lock;
   int mailbox_full;

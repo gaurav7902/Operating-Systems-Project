@@ -4,6 +4,7 @@
 > 1. First understand your assigned task and expected behavior.
 > 2. Implement your part in the correct module.
 > 3. Before pushing your implementation, update this README with your part's documentation like what you added and any usage details for your part.
+> 4. Make a branch as `person1name-person2name-algorithm` then work
 
 This folder is intentionally a skeleton so multiple contributors can work in parallel.
 

@@ -103,13 +103,14 @@ extern uint64 sys_mkdir(void);
 extern uint64 sys_close(void);
 extern uint64 sys_alarm_signal(void);
 extern uint64 sys_alarm_return(void);
-// Declare the kernel handler function for getppid syscall
 extern uint64 sys_getppid(void);
-// Declare handler
 extern uint64 sys_getprocinfo(void);
-//message passsing --gaurav
 extern uint64 sys_sendmsg(void);
 extern uint64 sys_recvmsg(void);
+extern uint64 sys_yield_cpu(void);
+extern uint64 sys_sleep_for(void);
+extern uint64 sys_fork_with_limit(void);
+extern uint64 sys_set_priority(void);
 
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
@@ -124,15 +125,16 @@ static uint64 (*syscalls[])(void) = {
 [SYS_fstat]   sys_fstat,
 [SYS_chdir]   sys_chdir,
 [SYS_dup]     sys_dup,
-// Map syscall number to corresponding handler function
-// When user calls getppid(), control reaches sys_getppid()
 [SYS_getppid] sys_getppid,
-// Map syscall number → handler
 [SYS_getprocinfo] sys_getprocinfo,
+[SYS_recvmsg] sys_recvmsg,
+[SYS_sendmsg] sys_sendmsg,
 [SYS_getpid]  sys_getpid,
 [SYS_sbrk]    sys_sbrk,
-[SYS_pause]   sys_pause,
-[SYS_uptime]  sys_uptime,
+[SYS_yield_cpu] sys_yield_cpu,
+[SYS_sleep_for] sys_sleep_for,
+[SYS_fork_with_limit] sys_fork_with_limit,
+[SYS_set_priority] sys_set_priority,
 [SYS_open]    sys_open,
 [SYS_write]   sys_write,
 [SYS_mknod]   sys_mknod,
@@ -140,12 +142,6 @@ static uint64 (*syscalls[])(void) = {
 [SYS_link]    sys_link,
 [SYS_mkdir]   sys_mkdir,
 [SYS_close]   sys_close,
-//message passsing --gaurav
-[SYS_sendmsg] sys_sendmsg,
-[SYS_recvmsg] sys_recvmsg,
-// alarm --satish
-[SYS_alarm_signal] sys_alarm_signal,
-[SYS_alarm_return] sys_alarm_return,
 };
 
 void

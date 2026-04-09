@@ -146,8 +146,12 @@ UPROGS=\
 	$U/_forphan\
 	$U/_dorphan\
 	$U/_mailboxtest\
-	$U/_getprocinfo\
+ 	$U/_getprocinfo\
 	$U/_alarm_test\
+	$U/_testyield\
+	$U/_testsleep\
+	$U/_testforklimit\
+	$U/_testpriority \
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

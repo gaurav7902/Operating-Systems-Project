@@ -164,15 +164,6 @@ sys_uptime(void)
   return xticks;
 }
 
-// ============================================================
-// Alarm Signal System Calls
-// ============================================================
-
-// sys_alarm_signal(int ticks, void (*handler)())
-//
-// Register a periodic alarm. Every 'ticks' timer interrupts,
-// the kernel will divert this process's execution to 'handler'.
-// Pass ticks=0 to disable the alarm.
 uint64
 sys_alarm_signal(void)
 {
@@ -190,30 +181,17 @@ sys_alarm_signal(void)
   return 0;
 }
 
-// sys_alarm_return()
-//
-// Called at the end of the user's alarm handler. Restores the
-// trapframe that was saved before diverting to the handler, so
-// the process resumes execution exactly where it was interrupted.
 uint64
 sys_alarm_return(void)
 {
   struct proc *p = myproc();
-
-  // Restore the trapframe that was saved when the alarm fired.
   memmove(p->trapframe, p->alarm_saved_tf, sizeof(struct trapframe));
-
-  // Reset the countdown for the next alarm period.
   p->alarm_ticks_left = p->alarm_interval;
-
-  // Allow future alarms to fire again.
   p->alarm_active = 0;
 
-  return p->trapframe->a0;  // preserve the original return value
+  return p->trapframe->a0;
 }
 
-
-// message passing between processes --gaurav
 uint64
 sys_sendmsg(void)
 {
@@ -305,4 +283,70 @@ sys_recvmsg(void)
   release(&p->msg_lock);
 
   return len;
+}
+
+uint64
+sys_yield_cpu(void)
+{
+  yield();
+  return 0;
+}
+
+uint64
+sys_sleep_for(void)
+{
+  int n;
+  uint ticks0;
+
+  argint(0, &n);
+  acquire(&tickslock);
+  ticks0 = ticks;
+
+  while(ticks - ticks0 < n){
+    if(killed(myproc())){
+      release(&tickslock);
+      return -1;
+    }
+    sleep(&ticks, &tickslock);
+  }
+  release(&tickslock);
+
+  return 0;
+}
+
+uint64
+sys_fork_with_limit(void)
+{
+  int limit;
+  argint(0, &limit);
+
+  if(limit < 0)
+    return -1;
+
+  myproc()->fork_limit = limit;
+
+  return 0;
+}
+
+uint64
+sys_set_priority(void)
+{
+  int pid, priority;
+  extern struct proc proc[];
+  struct proc *p;
+
+  argint(0, &pid);
+  argint(1, &priority);
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->pid == pid){
+      p->priority = priority;
+      release(&p->lock);
+      return 0;
+    }
+    release(&p->lock);
+  }
+
+  return -1;
 }

@@ -14,6 +14,10 @@ struct stat;
 // system calls
 int fork(void);
 int exit(int) __attribute__((noreturn));
+int yield_cpu(void);
+int sleep_for(int);
+int fork_with_limit(int);
+int set_priority(int, int);
 int wait(int*);
 int pipe(int*);
 int write(int, const void*, int);
@@ -40,6 +44,7 @@ int getppid(void);
 int getprocinfo(int, struct procinfo *);
 int alarm_signal(int ticks, void (*handler)());
 int alarm_return(void);
+
 
 // ulib.c
 int stat(const char*, struct stat*);

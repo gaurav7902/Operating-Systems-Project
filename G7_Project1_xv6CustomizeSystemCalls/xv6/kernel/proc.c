@@ -165,6 +165,10 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  p->fork_limit = 0;
+  p->child_count = 0;
+  p->priority = 10;
+
   return p;
 }
 
@@ -305,6 +309,10 @@ kfork(void)
   struct proc *np;
   struct proc *p = myproc();
 
+  if(p->fork_limit > 0 && p->child_count >= p->fork_limit) {
+      return -1; 
+  }
+
   // Allocate process.
   if((np = allocproc()) == 0){
     return -1;
@@ -349,6 +357,7 @@ kfork(void)
   acquire(&np->lock);
   np->state = RUNNABLE;
   release(&np->lock);
+  p->child_count++; 
 
   return pid;
 }
@@ -486,23 +495,43 @@ scheduler(void)
     intr_off();
 
     int found = 0;
+
+    // ---- BEGIN PRIORITY SCHEDULER ----
+    
+    // Pass 1: Find the absolute highest priority among all runnable processes
+    int highest_pri = -1;
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
+      if(p->state == RUNNABLE && p->priority > highest_pri) {
+        highest_pri = p->priority;
       }
       release(&p->lock);
     }
+
+    // Pass 2: Run the processes that have this winning priority
+    if(highest_pri != -1) {
+      for(p = proc; p < &proc[NPROC]; p++) {
+        acquire(&p->lock);
+        
+        // We must re-check RUNNABLE because state might have changed 
+        // while we were checking other processes.
+        if(p->state == RUNNABLE && p->priority == highest_pri) {
+          
+          // Switch to chosen process.
+          p->state = RUNNING;
+          c->proc = p;
+          swtch(&c->context, &p->context);
+
+          // Process is done running for now.
+          c->proc = 0;
+          found = 1; // We successfully ran a process
+        }
+        release(&p->lock);
+      }
+    }
+    
+    // ---- END PRIORITY SCHEDULER ----
+
     if(found == 0) {
       // nothing to run; stop running on this core until an interrupt.
       asm volatile("wfi");

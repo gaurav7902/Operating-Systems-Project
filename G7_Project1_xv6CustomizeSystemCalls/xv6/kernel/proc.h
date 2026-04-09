@@ -87,6 +87,16 @@ enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 //funtion declaration to use in message passing --gaurav
 struct proc* find_proc(int pid);
 
+// Structure to store process information.
+// This is copied from kernel to user space by getprocinfo.
+struct procinfo {
+  int pid;
+  int state;
+  int sz;
+  int parent_pid;
+  int priority;
+};
+
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -97,6 +107,8 @@ struct proc {
   int killed;                  // If non-zero, have been killed
   int xstate;                  // Exit status to be returned to parent's wait
   int pid;                     // Process ID
+  int fork_limit;
+  int child_count;
   int priority;
 
   // wait_lock must be held when using this:
@@ -112,27 +124,15 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 
-  // Alarm signal fields
-  int alarm_interval;            // Timer interval in ticks (0 = disabled)
-  uint64 alarm_handler;          // User-space handler function address
-  int alarm_ticks_left;          // Countdown to next alarm firing
-  int alarm_active;              // Guard: 1 while handler is executing
-  struct trapframe *alarm_saved_tf; // Saved trapframe for alarm_return()
+  int alarm_interval;
+  uint64 alarm_handler;
+  int alarm_ticks_left;
+  int alarm_active;
+  struct trapframe *alarm_saved_tf;
 
-  // Single-slot mailbox for IPC. --gaurav
   struct spinlock msg_lock;
   int mailbox_full;
   int mailbox_src_pid;
   int mailbox_len;
   char mailbox_data[MSGSIZE];
-};
-
-// Structure to store process information
-// This will be copied from kernel → user space
-struct procinfo {
-    int pid;      // process ID
-    int state;    // process state (RUNNING, SLEEPING, etc.)
-    int sz;       // memory size of process
-    int parent_pid;
-    int priority;
 };

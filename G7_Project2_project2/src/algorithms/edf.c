@@ -52,7 +52,32 @@ void runEDF(Process p[], int n, GanttEntry chart[], int *chart_size) {
             current_time = next_arrival;
             continue;
         }
+        /* Record start time before executing */
+        int start_time = current_time;
+    
+        /* Execute selected process for 1 unit of time */
+        if (!p[selected].started) {
+            p[selected].started = true;
+            p[selected].response_time = current_time - p[selected].arrival_time;
+        }
 
-        
+        p[selected].remaining_time--;
+        current_time++;
+
+        /* Mark process as completed if all burst time is done */
+        if (p[selected].remaining_time == 0) {
+            p[selected].completion_time = current_time;
+            completed++;
+        }
+
+        /* Add to Gantt chart (merge with previous entry if same process) */
+        if (*chart_size > 0 && chart[*chart_size - 1].pid == p[selected].pid) {
+            chart[*chart_size - 1].end = current_time;
+        } else {
+            chart[*chart_size].pid = p[selected].pid;
+            chart[*chart_size].start = start_time;
+            chart[*chart_size].end = current_time;
+            (*chart_size)++;
+        }
     }
 }

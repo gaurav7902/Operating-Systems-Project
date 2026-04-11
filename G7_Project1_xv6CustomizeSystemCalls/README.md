@@ -626,7 +626,7 @@ The implementation demonstrates practical understanding of **operating system in
 
 ---
 =======
-# Project 1: Custom System Calls and Priority Scheduling in xv6
+# Project 1: Custom System Calls and Priority Scheduling in xv6  (Happy Saxena)
 
 This project focuses on extending the **xv6 operating system** by designing and implementing four custom system calls under the **Execution Control / Scheduling** category. The core of this project involves modifying the kernel's process management and transforming the default Round-Robin scheduler into a **Priority-Based Scheduler**.
 

@@ -1,3 +1,4 @@
+ Updated upstream
 # Alarm Signal — xv6 Custom System Call Project  --Sathish
 **Theme:** Kernel-level Process Control and Signal Handling
 ---
@@ -668,3 +669,6 @@ To see the real-time logging in action:
 4. **Verify output:** Each syscall involved in running  that command will be printed to the terminal in real-time.
 
 **By implementing this real-time logger, we've turned the "Black box" of the xv6 kernel into transparent environment. This makes it an excellent tool for students and developers to visualize the underlying mechanics of operating system resource management.**
+
+# Documentation
+ Stashed changes

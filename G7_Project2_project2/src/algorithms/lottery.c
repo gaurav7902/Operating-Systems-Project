@@ -71,7 +71,7 @@ void runLottery(Process p[], int n, GanttEntry chart[], int *chart_size) {
                 // Check if finished
                 if (p[cur_p].remaining_time <= 0) {
                     state[cur_p] = STATE_FINISHED;
-                    p[cur_p].completion_time = current_time + 1;
+                    p[cur_p].completion_time = current_time ;
                     completed_processes++;
                     preempt = true;
                 } 
@@ -91,7 +91,7 @@ void runLottery(Process p[], int n, GanttEntry chart[], int *chart_size) {
                 if (preempt) {
                     chart[*chart_size].pid = p[cur_p].pid;
                     chart[*chart_size].start = cpu_gantt_start[c];
-                    chart[*chart_size].end = current_time + 1;
+                    chart[*chart_size].end = current_time ;
                     chart[*chart_size].cpu_id = c; // Note which CPU it was on
                     (*chart_size)++;
                     cpu_current_pid[c] = -1; // Free the CPU

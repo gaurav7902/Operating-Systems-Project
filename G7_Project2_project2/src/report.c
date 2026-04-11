@@ -1,7 +1,6 @@
 #include <stdio.h>
-#include "../include/scheduler_report.h"
 
-// Note: Ensure your scheduler_types.h has 'int cpu_id;' in GanttEntry!
+#include "../include/scheduler_report.h"
 
 void printGantt(GanttEntry chart[], int chart_size) {
     if (chart_size <= 0) {
@@ -9,33 +8,20 @@ void printGantt(GanttEntry chart[], int chart_size) {
         return;
     }
 
-    printf("\n======================================================\n");
-    printf("     VISUALLY MEANINGFUL MULTIPROCESSOR GANTT CHART   \n");
-    printf("======================================================\n");
+    printf("\nGantt Chart:\n");
 
-    // Find out how many CPUs were used
-    int max_cpu = 0;
     for (int i = 0; i < chart_size; i++) {
-        if (chart[i].cpu_id > max_cpu) {
-            max_cpu = chart[i].cpu_id;
-        }
+        if (chart[i].pid == -1)
+            printf("| IDLE ");
+        else
+            printf("| P%d ", chart[i].pid);
     }
+    printf("|\n");
 
-    // Print a separate timeline for each CPU
-    for (int c = 0; c <= max_cpu; c++) {
-        printf("CPU %d: ", c);
-        for (int i = 0; i < chart_size; i++) {
-            if (chart[i].cpu_id == c) {
-                if (chart[i].pid == -1) {
-                    printf("| IDLE (%d-%d) ", chart[i].start, chart[i].end);
-                } else {
-                    printf("| P%d (%d-%d) ", chart[i].pid, chart[i].start, chart[i].end);
-                }
-            }
-        }
-        printf("|\n");
+    for (int i = 0; i < chart_size; i++) {
+        printf("%d    ", chart[i].start);
     }
-    printf("======================================================\n");
+    printf("%d\n", chart[chart_size - 1].end);
 }
 
 void calculateMetrics(Process p[], int n) {

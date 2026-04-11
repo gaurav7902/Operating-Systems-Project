@@ -33,6 +33,7 @@ typedef struct {
     int pid; /* -1 for IDLE */
     int start;
     int end;
+    int cpu_id;
 } GanttEntry;
 
 #endif

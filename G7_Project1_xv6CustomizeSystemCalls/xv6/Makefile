@@ -152,6 +152,7 @@ UPROGS=\
 	$U/_testsleep\
 	$U/_testforklimit\
 	$U/_testpriority \
+	$U/_syscall_test\
 
 fs.img: mkfs/mkfs README $(UPROGS)
 	mkfs/mkfs fs.img README $(UPROGS)

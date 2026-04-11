@@ -112,6 +112,31 @@ extern uint64 sys_sleep_for(void);
 extern uint64 sys_fork_with_limit(void);
 extern uint64 sys_set_priority(void);
 
+//syscall logger print --yesaswini
+char *syscall_names[] = {
+  [SYS_fork]   "fork",
+  [SYS_exit]   "exit",
+  [SYS_wait]   "wait",
+  [SYS_pipe]   "pipe",
+  [SYS_read]   "read",
+  [SYS_kill]   "kill",
+  [SYS_exec]   "exec",
+  [SYS_fstat]  "fstat",
+  [SYS_chdir]  "chdir",
+  [SYS_dup]    "dup",
+  [SYS_getpid] "getpid",
+  [SYS_sbrk]   "sbrk",
+  [SYS_pause]  "pause",
+  [SYS_uptime] "uptime",
+  [SYS_open]   "open",
+  [SYS_write]  "write",
+  [SYS_mknod]  "mknod",
+  [SYS_unlink] "unlink",
+  [SYS_link]   "link",
+  [SYS_mkdir]  "mkdir",
+  [SYS_close]  "close",
+};
+
 // An array mapping syscall numbers from syscall.h
 // to the function that handles the system call.
 static uint64 (*syscalls[])(void) = {
@@ -155,6 +180,11 @@ syscall(void)
   struct proc *p = myproc();
 
   num = p->trapframe->a7;
+  //syscall logger print --yesaswini
+  if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
+    printf("PID: %d | Process: %s | Syscall: %s\n", p->pid , p->name , syscall_names[num]);
+  }
+
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
     // Use num to lookup the system call function for num, call it,
     // and store its return value in p->trapframe->a0

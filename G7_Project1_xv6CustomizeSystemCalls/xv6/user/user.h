@@ -71,3 +71,8 @@ void free(void*);
 //message passsing --gaurav
 int sendmsg(int pid, void *msg, int len);
 int recvmsg(int *src_pid, void *buf, int maxlen);
+
+int sleep(int);
+int sem_init(int); //semaphore initialization
+int sem_wait(void); //semaphore wait operation
+int sem_signal(void); //semaphore signal operation

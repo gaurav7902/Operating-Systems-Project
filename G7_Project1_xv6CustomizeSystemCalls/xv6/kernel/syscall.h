@@ -30,3 +30,7 @@
 #define SYS_sleep_for 29
 #define SYS_fork_with_limit 30
 #define SYS_set_priority 31
+#define SYS_sem_init 32
+#define SYS_sem_wait 33
+#define SYS_sem_signal 34
+#define SYS_sleep 35

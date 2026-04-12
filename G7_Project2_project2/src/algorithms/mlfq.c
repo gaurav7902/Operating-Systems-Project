@@ -84,6 +84,68 @@ void runMLFQ(Process p[], int n, GanttEntry chart[], int *chart_size) {
             continue;
         }
 
-    
+        /* 1. Calculate time quantum*/
+        int quantum;
+        if(info[sel].queue_level == 0)
+            quantum = TQ_Q0 - info[sel].time_used_in_queue;
+        else if(info[sel].queue_level == 1)
+            quantum = TQ_Q1 - info[sel].time_used_in_queue;
+        else
+            quantum = p[sel].remaining_time; 
+
+        if(quantum > p[sel].remaining_time)
+            quantum = p[sel].remaining_time;
+
+        /* 2. Execution loop (tick-by-tick part)*/
+        int run_time = 0;
+        int start_time = current_time;
+
+        while(run_time < quantum && p[sel].remaining_time > 0){
+            if(!p[sel].started){
+                p[sel].started = 1;
+                p[sel].response_time = current_time - p[sel].arrival_time;
+            }
+
+            p[sel].remaining_time--;
+            current_time++;
+            run_time++;
+            info[sel].time_used_in_queue++;
+
+            /* stop if priority boost triggers mid-execution*/
+            if(current_time % BOOST_INTERVAL == 0)break;
+
+            /*PREEMPTION: check if higher priority process just arrived*/
+            if(p[sel].remaining_time > 0 && info[sel].queue_level > 0){
+                int preempt = 0;
+                for(int i = 0; i < n; i++){
+                    if(p[i].remaining_time > 0 && p[i].arrival_time <= current_time && info[i].queue_level < info[sel].queue_level){
+                        preempt = 1;
+                        break;
+                    }
+                }
+                if(preempt)break;
+            }
+        }
+
+        /* 3. Recording Gantt chart entry*/
+        
+        chart[*chart_size].pid = p[sel].pid;
+        chart[*chart_size].start = start_time;
+        chart[*chart_size].end = current_time;
+        (*chart_size)++;
+        
+
+        /* 4. Completion or demotion*/
+        if(p[sel].remaining_time == 0){
+            p[sel].completion_time = current_time;
+            completed++;
+        }else{
+            //process used full quantum => demote to next queue
+            int tq_limit = (info[sel].queue_level == 0) ? TQ_Q0 : TQ_Q1;
+            if(info[sel].queue_level < 2 && info[sel].time_used_in_queue >= tq_limit){
+                info[sel].queue_level++;
+                info[sel].time_used_in_queue = 0;
+            }
+        }
     }
 }

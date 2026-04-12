@@ -111,6 +111,10 @@ extern uint64 sys_yield_cpu(void);
 extern uint64 sys_sleep_for(void);
 extern uint64 sys_fork_with_limit(void);
 extern uint64 sys_set_priority(void);
+extern uint64 sys_sem_init(void);
+extern uint64 sys_sem_wait(void);
+extern uint64 sys_sem_signal(void);
+extern uint64 sys_sleep(void);
 
 //syscall logger print --yesaswini
 char *syscall_names[] = {
@@ -145,6 +149,10 @@ char *syscall_names[] = {
   [SYS_sleep_for] "sleep_for",
   [SYS_fork_with_limit] "fork_with_limit",
   [SYS_set_priority] "set_priority",
+  [SYS_sem_init] "sem_init",
+  [SYS_sem_wait] "sem_wait",
+  [SYS_sem_signal] "sem_signal",
+  [SYS_sleep] "sleep",
 };
 
 // An array mapping syscall numbers from syscall.h
@@ -181,6 +189,10 @@ static uint64 (*syscalls[])(void) = {
 [SYS_sleep_for] sys_sleep_for,
 [SYS_fork_with_limit] sys_fork_with_limit,
 [SYS_set_priority] sys_set_priority,
+[SYS_sem_init] sys_sem_init,
+[SYS_sem_wait] sys_sem_wait,
+[SYS_sem_signal] sys_sem_signal,
+[SYS_sleep] sys_sleep,
 };
 
 void

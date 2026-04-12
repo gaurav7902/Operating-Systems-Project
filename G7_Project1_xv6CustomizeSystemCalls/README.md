@@ -1,5 +1,3 @@
-
-
 # Alarm Signal — xv6 Custom System Call Project  --Sathish
 **Theme:** Kernel-level Process Control and Signal Handling
 ---
@@ -627,7 +625,7 @@ The implementation demonstrates practical understanding of **operating system in
 
 ---
 
-# Syscall Logger Enhancement -- Yesaswini
+# Syscall Logger Enhancement --Yesaswini
 
 This part adds a **real-time syscall logging mechanism** to xv6 that captures every system call made by a process ( filters write, read and "sh" processes ) and displays them **after the process completes** - keeping the output clean and readable.
 
@@ -741,10 +739,25 @@ To see the buffer logger in action:
 
 **This logger makes xv6 **transparent** - every syscall a process makes is captured and shown after it finishes, helping understand OS internals clearly.**
 
-# Documentation
- Stashed changes
+# Category 4: Synchronization (Semaphores) --Ishika
+(implemented a counting semaphore system to manage process synchronization and prevent race conditions)
+
+###Implementation details:
+* **Semaphore Structure**: created a 'struct sem' in 'kernel/proc.h' containing an integer 'value' and a 'spinlock'
+* **Kernel logic ('kernel/sem.c')**:
+    * 'sem_init': initializes the semaphore value and the spinlock
+    * 'sem_wait': uses a 'while' loop to check the value. If it is '\le 0' then it calls the kernel 'sleep()' function to block the process.
+    * 'sem_signal': increments the value and calls 'wakeup()' to unblock the waiting processes
+* **System call mapping**: integrated the functions into 'syscall.h' and 'syscall.c' (IDs 22-25) and restored 'sys_sleep' in sysproc.c' to allow user-space timing.
+
+
+### Test results:
+The 'semtest' program proves the implementation works. 
+i.e. the parent process successfully uses 'sem_signal' to unblock the child process after a 10-tick delay.
+
+![Semaphore Test Output](semtest_results.png)  Stashed changes
 =======
-# Project 1: Custom System Calls and Priority Scheduling in xv6  (Happy Saxena)
+# Project 1: Custom System Calls and Priority Scheduling in xv6 --Happy Saxena
 
 This project focuses on extending the **xv6 operating system** by designing and implementing four custom system calls under the **Execution Control / Scheduling** category. The core of this project involves modifying the kernel's process management and transforming the default Round-Robin scheduler into a **Priority-Based Scheduler**.
 

@@ -52,3 +52,7 @@ entry("yield_cpu");
 entry("sleep_for");
 entry("fork_with_limit");
 entry("set_priority");
+entry("sleep");
+entry("sem_init");
+entry("sem_wait");
+entry("sem_signal");

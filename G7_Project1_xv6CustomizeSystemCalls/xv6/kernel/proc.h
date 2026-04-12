@@ -139,3 +139,11 @@ struct proc {
   int syscall_log[100];
   int syscall_count;
 };
+
+
+
+//Semaphore structure- Ishika
+struct sem{
+  int value;
+  struct spinlock lock;
+};

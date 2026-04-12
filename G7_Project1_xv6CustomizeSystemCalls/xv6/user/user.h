@@ -47,3 +47,8 @@ void printf(const char*, ...) __attribute__ ((format (printf, 1, 2)));
 // umalloc.c
 void* malloc(uint);
 void free(void*);
+
+int sleep(int);
+int sem_init(int); //semaphore initialization
+int sem_wait(void); //semaphore wait operation
+int sem_signal(void); //semaphore signal operation

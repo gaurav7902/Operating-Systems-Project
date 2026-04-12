@@ -105,3 +105,11 @@ struct proc {
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
 };
+
+
+
+//Semaphore structure- Ishika
+struct sem{
+  int value;
+  struct spinlock lock;
+};

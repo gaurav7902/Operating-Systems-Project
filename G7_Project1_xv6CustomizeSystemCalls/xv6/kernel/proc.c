@@ -19,6 +19,7 @@ extern void forkret(void);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
+extern char *syscall_names[];			  
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
@@ -168,6 +169,7 @@ found:
   p->fork_limit = 0;
   p->child_count = 0;
   p->priority = 10;
+  p->syscall_count = 0;
 
   return p;
 }
@@ -204,6 +206,12 @@ freeproc(struct proc *p)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
   p->sz = 0;
+  if(p->syscall_count > 0) {
+          printf("\nPID:%d Process:%s Syscalls \n", p->pid, p->name);
+          for(int i = 0; i < p->syscall_count; i++){
+                  printf(" Syscall: %s\n", syscall_names[p->syscall_log[i]]);
+          }
+  }
   p->pid = 0;
   p->parent = 0;
   p->name[0] = 0;
@@ -213,7 +221,8 @@ freeproc(struct proc *p)
   p->alarm_interval = 0;
   p->alarm_handler = 0;
   p->alarm_ticks_left = 0;
-  p->alarm_active = 0;
+  p->alarm_active = 0;	  
+  p->syscall_count = 0;
   p->state = UNUSED;
 }
 

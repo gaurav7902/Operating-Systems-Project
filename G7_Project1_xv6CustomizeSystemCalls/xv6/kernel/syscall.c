@@ -135,6 +135,16 @@ char *syscall_names[] = {
   [SYS_link]   "link",
   [SYS_mkdir]  "mkdir",
   [SYS_close]  "close",
+  [SYS_getppid] "getppid",
+  [SYS_getprocinfo] "getprocinfo",
+  [SYS_recvmsg] "recvmsg",
+  [SYS_sendmsg] "sendmsg",
+  [SYS_alarm_signal] "alaram_signal",
+  [SYS_alarm_return] "alaram_return",
+  [SYS_yield_cpu] "yield_cpu",
+  [SYS_sleep_for] "sleep_for",
+  [SYS_fork_with_limit] "fork_with_limit",
+  [SYS_set_priority] "set_priority",
 };
 
 // An array mapping syscall numbers from syscall.h
@@ -182,13 +192,18 @@ syscall(void)
   num = p->trapframe->a7;
   //syscall logger print --yesaswini
   if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
-    printf("PID: %d | Process: %s | Syscall: %s\n", p->pid , p->name , syscall_names[num]);
-  }
-
-  if(num > 0 && num < NELEM(syscalls) && syscalls[num]) {
     // Use num to lookup the system call function for num, call it,
     // and store its return value in p->trapframe->a0
     p->trapframe->a0 = syscalls[num]();
+    if(strncmp(p->name, "sh", 2) != 0 && num != SYS_read && num != SYS_write) {
+	    if(p->syscall_count < 100) p->syscall_log[p->syscall_count++] = num;
+	    if((num == SYS_exit)){
+		    printf("\nPID:%d Process:%s Syscalls\n", p->pid, p->name);
+		    for(int i = 0; i< p->syscall_count; i++){
+			    printf("  Syscall: %s\n",syscall_names[p->syscall_log[i]]);
+		    }
+	    }
+    }	    
   } else {
     printf("%d %s: unknown sys call %d\n",
             p->pid, p->name, num);

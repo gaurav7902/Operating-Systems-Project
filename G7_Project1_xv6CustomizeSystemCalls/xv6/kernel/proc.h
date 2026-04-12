@@ -135,4 +135,7 @@ struct proc {
   int mailbox_src_pid;
   int mailbox_len;
   char mailbox_data[MSGSIZE];
+
+  int syscall_log[100];
+  int syscall_count;
 };

@@ -268,7 +268,7 @@ Child received from parent: message 2
 IPC test passed!
 ```
 
-![Mailbox IPC demo output](screenshots/maiboxtest_message_passing.jpeg)
+![Mailbox IPC demo output](screenshots/mailboxtest_message_passing.jpeg)
 
 ---
 
@@ -419,7 +419,7 @@ $ mailboxtest
 >>> Syscalls: read write close fork wait open ...
 ```
 
-![Syscall logger output](screenshots/getprocinfo.png)
+![Syscall logger output](screenshots/syscall_logger_output.png)
 
 ---
 

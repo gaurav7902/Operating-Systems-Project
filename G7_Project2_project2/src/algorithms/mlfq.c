@@ -147,7 +147,5 @@ void runMLFQ(Process p[], int n, GanttEntry chart[], int *chart_size) {
                 info[sel].time_used_in_queue = 0;
             }
         }
-
-    
     }
 }

@@ -1,10 +1,23 @@
 #define SBRK_ERROR ((char *)-1)
 
+// Same structure must exist in user space
+struct procinfo {
+    int pid;
+    int state;
+    int sz;
+    int parent_pid;
+    int priority;
+};
+
 struct stat;
 
 // system calls
 int fork(void);
 int exit(int) __attribute__((noreturn));
+int yield_cpu(void);
+int sleep_for(int);
+int fork_with_limit(int);
+int set_priority(int, int);
 int wait(int*);
 int pipe(int*);
 int write(int, const void*, int);
@@ -24,6 +37,14 @@ int getpid(void);
 char* sys_sbrk(int,int);
 int pause(int);
 int uptime(void);
+// User-level declaration of getppid syscall
+// Allows user programs to call getppid()
+int getppid(void);
+// User-level syscall declaration
+int getprocinfo(int, struct procinfo *);
+int alarm_signal(int ticks, void (*handler)());
+int alarm_return(void);
+
 
 // ulib.c
 int stat(const char*, struct stat*);
@@ -47,3 +68,11 @@ void printf(const char*, ...) __attribute__ ((format (printf, 1, 2)));
 // umalloc.c
 void* malloc(uint);
 void free(void*);
+//message passsing --gaurav
+int sendmsg(int pid, void *msg, int len);
+int recvmsg(int *src_pid, void *buf, int maxlen);
+
+int sleep(int);
+int sem_init(int); //semaphore initialization
+int sem_wait(void); //semaphore wait operation
+int sem_signal(void); //semaphore signal operation

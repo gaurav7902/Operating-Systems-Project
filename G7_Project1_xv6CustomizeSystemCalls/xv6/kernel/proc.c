@@ -19,6 +19,7 @@ extern void forkret(void);
 static void freeproc(struct proc *p);
 
 extern char trampoline[]; // trampoline.S
+extern char *syscall_names[];			  
 
 // helps ensure that wakeups of wait()ing
 // parents are not lost. helps obey the
@@ -123,7 +124,13 @@ allocproc(void)
 
 found:
   p->pid = allocpid();
+  p->priority = p->pid % 10;   // assign varying priority
   p->state = USED;
+  // Initialize per-process mailbox state. --gaurav
+  p->mailbox_full = 0;
+  p->mailbox_src_pid = 0;
+  p->mailbox_len = 0;
+  initlock(&p->msg_lock, "msglock");
 
   // Allocate a trapframe page.
   if((p->trapframe = (struct trapframe *)kalloc()) == 0){
@@ -140,13 +147,47 @@ found:
     return 0;
   }
 
+  // Allocate a page for the saved alarm trapframe.
+  if((p->alarm_saved_tf = (struct trapframe *)kalloc()) == 0){
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+
+  // Initialize alarm fields.
+  p->alarm_interval = 0;
+  p->alarm_handler = 0;
+  p->alarm_ticks_left = 0;
+  p->alarm_active = 0;
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  p->fork_limit = 0;
+  p->child_count = 0;
+  p->priority = 10;
+  p->syscall_count = 0;
+
   return p;
+}
+
+struct proc*
+find_proc(int pid)
+{
+  struct proc *p;
+
+  for(p = proc; p < &proc[NPROC]; p++){
+    acquire(&p->lock);
+    if(p->pid == pid && p->state != UNUSED){
+      release(&p->lock);  // release before returning
+      return p;
+    }
+    release(&p->lock);
+  }
+  return 0;
 }
 
 // free a proc structure and the data hanging from it,
@@ -158,16 +199,30 @@ freeproc(struct proc *p)
   if(p->trapframe)
     kfree((void*)p->trapframe);
   p->trapframe = 0;
+  if(p->alarm_saved_tf)
+    kfree((void*)p->alarm_saved_tf);
+  p->alarm_saved_tf = 0;
   if(p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
   p->sz = 0;
+  if(p->syscall_count > 0) {
+          printf("\nPID:%d Process:%s Syscalls \n", p->pid, p->name);
+          for(int i = 0; i < p->syscall_count; i++){
+                  printf(" Syscall: %s\n", syscall_names[p->syscall_log[i]]);
+          }
+  }
   p->pid = 0;
   p->parent = 0;
   p->name[0] = 0;
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  p->alarm_interval = 0;
+  p->alarm_handler = 0;
+  p->alarm_ticks_left = 0;
+  p->alarm_active = 0;	  
+  p->syscall_count = 0;
   p->state = UNUSED;
 }
 
@@ -263,6 +318,10 @@ kfork(void)
   struct proc *np;
   struct proc *p = myproc();
 
+  if(p->fork_limit > 0 && p->child_count >= p->fork_limit) {
+      return -1; 
+  }
+
   // Allocate process.
   if((np = allocproc()) == 0){
     return -1;
@@ -278,6 +337,12 @@ kfork(void)
 
   // copy saved user registers.
   *(np->trapframe) = *(p->trapframe);
+
+  // Copy alarm state from parent to child.
+  np->alarm_interval = p->alarm_interval;
+  np->alarm_handler = p->alarm_handler;
+  np->alarm_ticks_left = p->alarm_ticks_left;
+  np->alarm_active = 0;  // child starts with no active handler
 
   // Cause fork to return 0 in the child.
   np->trapframe->a0 = 0;
@@ -301,6 +366,7 @@ kfork(void)
   acquire(&np->lock);
   np->state = RUNNABLE;
   release(&np->lock);
+  p->child_count++; 
 
   return pid;
 }
@@ -438,23 +504,43 @@ scheduler(void)
     intr_off();
 
     int found = 0;
+
+    // ---- BEGIN PRIORITY SCHEDULER ----
+    
+    // Pass 1: Find the absolute highest priority among all runnable processes
+    int highest_pri = -1;
     for(p = proc; p < &proc[NPROC]; p++) {
       acquire(&p->lock);
-      if(p->state == RUNNABLE) {
-        // Switch to chosen process.  It is the process's job
-        // to release its lock and then reacquire it
-        // before jumping back to us.
-        p->state = RUNNING;
-        c->proc = p;
-        swtch(&c->context, &p->context);
-
-        // Process is done running for now.
-        // It should have changed its p->state before coming back.
-        c->proc = 0;
-        found = 1;
+      if(p->state == RUNNABLE && p->priority > highest_pri) {
+        highest_pri = p->priority;
       }
       release(&p->lock);
     }
+
+    // Pass 2: Run the processes that have this winning priority
+    if(highest_pri != -1) {
+      for(p = proc; p < &proc[NPROC]; p++) {
+        acquire(&p->lock);
+        
+        // We must re-check RUNNABLE because state might have changed 
+        // while we were checking other processes.
+        if(p->state == RUNNABLE && p->priority == highest_pri) {
+          
+          // Switch to chosen process.
+          p->state = RUNNING;
+          c->proc = p;
+          swtch(&c->context, &p->context);
+
+          // Process is done running for now.
+          c->proc = 0;
+          found = 1; // We successfully ran a process
+        }
+        release(&p->lock);
+      }
+    }
+    
+    // ---- END PRIORITY SCHEDULER ----
+
     if(found == 0) {
       // nothing to run; stop running on this core until an interrupt.
       asm volatile("wfi");

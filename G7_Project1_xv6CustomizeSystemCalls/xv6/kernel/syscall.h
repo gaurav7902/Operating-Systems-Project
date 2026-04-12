@@ -20,3 +20,17 @@
 #define SYS_link   19
 #define SYS_mkdir  20
 #define SYS_close  21
+#define SYS_getppid 22
+#define SYS_getprocinfo 23
+#define SYS_recvmsg 24
+#define SYS_sendmsg 25
+#define SYS_alarm_signal 26
+#define SYS_alarm_return 27
+#define SYS_yield_cpu 28
+#define SYS_sleep_for 29
+#define SYS_fork_with_limit 30
+#define SYS_set_priority 31
+#define SYS_sem_init 32
+#define SYS_sem_wait 33
+#define SYS_sem_signal 34
+#define SYS_sleep 35

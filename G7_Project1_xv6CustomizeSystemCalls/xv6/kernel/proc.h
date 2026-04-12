@@ -81,6 +81,22 @@ struct trapframe {
 
 enum procstate { UNUSED, USED, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
+//message passing for IPC --gaurav
+#define MSGSIZE 128
+
+//funtion declaration to use in message passing --gaurav
+struct proc* find_proc(int pid);
+
+// Structure to store process information.
+// This is copied from kernel to user space by getprocinfo.
+struct procinfo {
+  int pid;
+  int state;
+  int sz;
+  int parent_pid;
+  int priority;
+};
+
 // Per-process state
 struct proc {
   struct spinlock lock;
@@ -91,6 +107,9 @@ struct proc {
   int killed;                  // If non-zero, have been killed
   int xstate;                  // Exit status to be returned to parent's wait
   int pid;                     // Process ID
+  int fork_limit;
+  int child_count;
+  int priority;
 
   // wait_lock must be held when using this:
   struct proc *parent;         // Parent process
@@ -104,4 +123,27 @@ struct proc {
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
   char name[16];               // Process name (debugging)
+
+  int alarm_interval;
+  uint64 alarm_handler;
+  int alarm_ticks_left;
+  int alarm_active;
+  struct trapframe *alarm_saved_tf;
+
+  struct spinlock msg_lock;
+  int mailbox_full;
+  int mailbox_src_pid;
+  int mailbox_len;
+  char mailbox_data[MSGSIZE];
+
+  int syscall_log[100];
+  int syscall_count;
+};
+
+
+
+//Semaphore structure- Ishika
+struct sem{
+  int value;
+  struct spinlock lock;
 };

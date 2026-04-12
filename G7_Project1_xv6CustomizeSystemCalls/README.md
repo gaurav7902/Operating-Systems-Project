@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
  Updated upstream
 # Alarm Signal — xv6 Custom System Call Project  --Sathish
 **Theme:** Kernel-level Process Control and Signal Handling
@@ -742,3 +743,76 @@ To see the buffer logger in action:
 
 # Documentation
  Stashed changes
+=======
+# Project 1: Custom System Calls and Priority Scheduling in xv6  (Happy Saxena)
+
+This project focuses on extending the **xv6 operating system** by designing and implementing four custom system calls under the **Execution Control / Scheduling** category. The core of this project involves modifying the kernel's process management and transforming the default Round-Robin scheduler into a **Priority-Based Scheduler**.
+
+## 🛠 Features Implemented
+
+### 1. `yield_cpu()`
+Allows a process to voluntarily release the CPU before its time slice expires. This demonstrates **cooperative multitasking**, where processes can yield to others to improve system flow.
+
+### 2. `sleep_for(int ticks)`
+Suspends the execution of a process for a specific number of hardware timer ticks. This implementation utilizes the kernel's global `ticks` variable and the `sleep/wakeup` mechanism.
+
+### 3. `fork_with_limit(int limit)`
+A security-enhanced version of the standard `fork()`. It introduces resource management by allowing a process to set a maximum number of child processes it can create, preventing "fork bomb" scenarios.
+
+### 4. `set_priority(int pid, int priority)`
+The flagship feature of this project. It allows dynamic adjustment of a process's priority. We replaced the standard Round-Robin scheduler in `kernel/proc.c` with a **Priority Scheduler** that always selects the runnable process with the highest priority value.
+
+---
+
+## 📁 Files Modified
+
+### Kernel Space
+- **`kernel/proc.h`**: Added `priority`, `fork_limit`, and `child_count` to `struct proc`.
+- **`kernel/proc.c`**: 
+  - Modified `allocproc()` to initialize new process variables.
+  - Updated `fork()` to enforce child limits.
+  - **Rewrote `scheduler()`** to implement the Priority-Based selection logic.
+- **`kernel/sysproc.c`**: Implemented the kernel-side logic for the four new system calls.
+- **`kernel/syscall.h` / `kernel/syscall.c`**: Registered the new system call numbers and function pointers.
+
+### User Space
+- **`user/user.h`**: Added function prototypes for user programs.
+- **`user/usys.pl`**: Added entry points to generate assembly stubs.
+- **`user/testyield.c`**: Verification for cooperative multitasking.
+- **`user/testsleep.c`**: Verification for timer-based delays.
+- **`user/testforklimit.c`**: Verification for resource constraints.
+- **`user/testpriority.c`**: Verification for the Priority Scheduler.
+
+---
+
+## 🚀 How to Run and Test
+
+### Prerequisites
+Ensure you have the RISC-V toolchain and QEMU installed.
+
+### Build and Launch
+To ensure a clean build and test the Priority Scheduler correctly, run with a **single CPU**:
+```bash
+make clean
+make CPUS=1 qemu
+
+```
+### Testing the System Calls
+Once inside the xv6 shell, you can run the following test programs:
+```bash
+$ testyield
+```
+
+```bash
+$ testsleep 50
+```
+
+```bash
+$ testforklimit 2
+```
+
+```bash
+$ testpriority 5 10 20
+```
+
+>>>>>>> Stashed changes

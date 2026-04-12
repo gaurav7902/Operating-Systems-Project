@@ -74,3 +74,33 @@ make clean
 - This is a collaboration skeleton, not a completed scheduler project.
 - Use the existing function signatures so all files remain compatible.
 - Keep changes scoped to your team file whenever possible to avoid merge conflicts.
+
+
+## MLFQ Implementation details (Sathish and Ishika)
+implemented in 'src/algorithms/mlfq.c'
+(MLFQ focuses on optimizing process turnaround time and preventing starvation through a dynamic priority system)
+
+### Algorithm logic
+* **Queues:** 3 distinct priority levels (Q0, Q1, Q2)
+* **Time quantums:** 
+	* **Queue 0 (high):** 4 ticks
+	* **Queue 1 (medium):** 8 ticks
+	* **Queue 2 (low):** FCFS behaviour
+* **Preemption:** High-priority processes in Q0 will preempt any running process from Q1 or Q2.
+* **Demotion:** Process are demoted to the next lower queue level only after fully exhausting their assigned time quantum.
+* **Priority boost:** every **20 ticks**, all processes (regardless of status) are moved back to queue 0 to ensure low-priority tasks also receive CPU time
+
+### Testing and verification
+**Test case configuration:**
+- **P1:** arrival 0, burst 20
+- **P2:** arrival 0, burst 8
+- **P3:** arrival 5, burst 4
+
+output image:
+![MLFQ Gantt chart output](mlfq_output.png)
+
+
+### Usage
+1. Run 'make rebuild' to compile the new logic
+2. Run 'make run'.
+3. Choose the MLFQ option (3) from the algorithm selection menu

@@ -1,553 +1,347 @@
-# Alarm Signal — xv6 Custom System Call Project  --Sathish
-**Theme:** Kernel-level Process Control and Signal Handling
----
+# Project 1: xv6 Custom System Calls and Kernel Extensions
+
+This project extends xv6-riscv with six major contributions across process control, IPC, process introspection, syscall tracing, synchronization, and scheduling. Together, these system calls enhance the operating system with signal handling, inter-process communication, process metadata inspection, execution control, synchronization primitives, and priority-based scheduling.
+
+## Table of Contents
+
+- [Quick Navigation](#quick-navigation)
+- [Project Overview](#project-overview)
+- [System Calls Implementation](#system-calls-implementation)
+  - [1. Alarm Signal](#1-alarm-signal-system-call--contributor-sathish)
+  - [2. Message Passing IPC](#2-message-passing-ipc--contributor-gaurav)
+  - [3. Process Information](#3-process-information-system-calls--contributor-john)
+  - [4. Syscall Logger Enhancement](#4-syscall-logger-enhancement--contributor-yesaswini)
+  - [5. Synchronization with Semaphores](#5-synchronization-with-semaphores--contributor-ishika)
+  - [6. Execution Control and Scheduling](#6-execution-control-and-scheduling-system-calls--contributor-happy-saxena)
+- [Building and Running](#building-and-running)
+- [Contributors](#contributors)
+- [References](#references)
+
+## Quick Navigation
+
+- [System Calls Summary](#project-overview)
+- [Implementation Details](#system-calls-implementation)
+- [Build Instructions](#building-and-running)
+- [Demonstrations](#demonstrations)
+
 ## Project Overview
-This project implements the **`alarm_signal(int ticks, void (*handler)())`** system call in the xv6 operating system. It bridges the gap between hardware timer interrupts and user-space execution by allowing a process to register a callback function that the kernel automatically invokes after a specified number of timer ticks.
 
-### What Does This Project Do? (Simple Explanation)
+### What This Project Contains
 
-Imagine you set a kitchen timer for 5 minutes. You go back to cooking (your main work). When the timer rings, you stop cooking, go check the oven (your handler task), and then return to cooking exactly where you left off.
+| Component | System Calls | Purpose |
+|-----------|--------------|---------|
+| **1. Alarm Signal** | `alarm_signal()`, `alarm_return()` | User-level periodic timer signals with kernel-managed event dispatch |
+| **2. Message Passing IPC** | `sendmsg()`, `recvmsg()` | Single-slot mailbox-based inter-process communication with blocking semantics |
+| **3. Process Information** | `getppid()`, `getprocinfo()` | Process metadata inspection including state, priority, and memory size |
+| **4. Syscall Logger** | Enhanced `syscall()` path | Buffered per-process syscall logging with deferred output for clean runtime visibility |
+| **5. Semaphores** | `sem_init()`, `sem_wait()`, `sem_signal()` | Counting semaphore synchronization with kernel sleep/wakeup primitives |
+| **6. Execution Control & Scheduling** | `yield_cpu()`, `sleep_for()`, `fork_with_limit()`, `set_priority()` | Process yield, timed sleep, fork resource limits, and priority-based scheduling |
 
-**That is exactly what `alarm_signal` does — but inside an operating system:**
+### Where to Build and Run xv6
 
-1. A user program tells the kernel: *"Every 5 timer ticks, call this function for me."*
-2. The kernel keeps counting ticks in the background while the program runs normally.
-3. When 5 ticks pass, the kernel **pauses** the program, **runs the handler function**, and then **resumes** the program as if nothing happened.
-4. This repeats automatically. To stop it, the program calls `alarm_signal(0, 0)`.
+All xv6 source and build artifacts are in:
 
-### Key Terms
+```bash
+cd G7_Project1_xv6CustomizeSystemCalls/xv6
+```
 
-- **Tick** — One hardware timer interrupt. The CPU generates these at a fixed rate (~10 per second in xv6). Each tick is the kernel's "heartbeat."
-- **Firing** — When the alarm "goes off." After counting down the specified number of ticks, the alarm **fires** — meaning the kernel redirects the process to run the handler function. Each firing produces one `>>> ALARM FIRED! <<<` message.
-- **Busy Loop** — A loop that keeps the CPU busy doing nothing useful (`while(condition) {}`). The test program uses this to keep the process running while waiting for the timer to fire. Without a busy loop, the program would exit before any alarms could fire.
-- **Handler** — A user-written function that the kernel calls when the alarm fires. It must call `alarm_return()` at the end to go back to the main program.
+From there, build and boot xv6 (see [Building and Running](#building-and-running) section).
 
 ---
 
-## System Calls Implemented
+# System Calls Implementation
 
-### 1. `alarm_signal(int ticks, void (*handler)())`
+## 1. Alarm Signal System Call | Contributor: Sathish
 
-| Parameter | Description |
-|-----------|-------------|
-| `ticks`   | Number of timer interrupts between each alarm (0 to disable) |
-| `handler` | Pointer to a user-space function to call when the alarm fires |
-| **Returns** | 0 on success |
+### Overview
 
-### 2. `alarm_return(void)`
+The alarm signal system implements **user-level periodic timer interrupts** with kernel-managed event dispatch. Think of it like a kitchen timer: you register an alarm for N ticks, and when the countdown reaches zero, the kernel pauses your program, runs your handler function, and then resumes exactly where it left off—automatically repeating.
 
-| Description |
-|-------------|
-| Must be called at the end of the alarm handler to restore the process's original execution state |
-| **Returns** | Restores the original return value from before the alarm interrupted |
+**Core Concept:** Bridge hardware timer interrupts with user-space callback functions while preserving process execution state.
 
----
+### System Calls
 
-## Overall Process — Step by Step
+#### `alarm_signal(int ticks, void (*handler)())`
+- **ticks**: Number of timer interrupts before handler fires (0 = disable)
+- **handler**: Pointer to user-space function to call when alarm fires
+- **Returns**: 0 on success
 
-Here is the complete flow of how the alarm works from start to finish:
+#### `alarm_return(void)`
+- Must be called at end of handler to restore original execution state
+- **Returns**: Restores the return value from before the alarm interrupted
 
-### Step 1: User Program Registers the Alarm
+### How It Works (Step by Step)
+
+1. **Registration Phase**: User program calls `alarm_signal(5, alarm_handler)`. Kernel stores interval, handler address, and countdown in process struct.
+
+2. **Countdown Phase**: Program continues running normally. On every hardware timer tick (every ~0.1 seconds), kernel decrements countdown:
+   - Tick 1: alarm_ticks_left = 4
+   - Tick 2: alarm_ticks_left = 3
+   - ...
+   - Tick 5: alarm_ticks_left = 0 → **ALARM FIRES!**
+
+3. **Fire Phase**: When countdown reaches zero, the kernel:
+   - **Saves entire trapframe** (all 32 CPU registers + program counter) into `alarm_saved_tf`
+   - **Overwrites program counter** to point to handler function
+   - Sets `alarm_active = 1` (prevents re-entrant handler execution)
+   - Returns to user space → CPU now executes handler instead
+
+4. **Handler Execution**: User handler runs (e.g., prints message, increments counter), then calls `alarm_return()`
+
+5. **Restore Phase**: `alarm_return()` kernel call:
+   - **Restores saved trapframe** back to process
+   - Resets countdown to alarm_interval
+   - Clears `alarm_active = 0` (allows future alarms)
+   - Process resumes exactly where it was interrupted
+
+### Key Design Decisions
+
+**Re-entrancy Protection**: The `alarm_active` guard prevents double-firing. If the handler takes longer than N ticks, without this flag the alarm would try to fire again while the handler is still running, corrupting the saved state.
+
+**Trapframe Save/Restore**: The trapframe contains all CPU state. By saving it before dispatch and restoring it after, xv6 preserves the illusion that the handler execution was transparent to the process.
+
+### Implementation Details
+
+**Files Modified:**
+
+| File | Changes | Purpose |
+|------|---------|---------|
+| `kernel/proc.h` | Added alarm fields to `struct proc` | Store per-process alarm state |
+| `kernel/proc.c` | Initialize in `allocproc()`, cleanup in `freeproc()` | Lifecycle management |
+| `kernel/syscall.h` | Added SYS_alarm_signal, SYS_alarm_return | System call numbers |
+| `kernel/syscall.c` | Added syscall dispatch entries | Route calls to handlers |
+| `kernel/sysproc.c` | Implemented `sys_alarm_signal()` and `sys_alarm_return()` | Kernel-side logic |
+| `kernel/trap.c` | Added alarm countdown + fire logic in `usertrap()` | Core: decrement and dispatch on timer tick |
+| `user/user.h` | Added function declarations | User-space interface |
+| `user/usys.pl` | Added assembly stubs | Generate `ecall` instructions |
+| `user/alarm_test.c` | **NEW**: Test program with 3 tests | Validation |
+| `Makefile` | Added `_alarm_test` to UPROGS | Build integration |
+
+**Key Code in trap.c** (runs on every timer interrupt):
 ```c
-alarm_signal(5, alarm_handler);  // "Call alarm_handler every 5 ticks"
-```
-The kernel stores these values inside the process's `struct proc`:
-- `alarm_interval = 5` (the repeat interval)
-- `alarm_handler = address of alarm_handler function`
-- `alarm_ticks_left = 5` (countdown starts)
-
-### Step 2: Program Continues Running (Busy Loop)
-```c
-while (alarm_count < 3) {
-    // The program spins here doing nothing.
-    // Meanwhile, the hardware timer keeps ticking.
-}
-```
-The program runs this loop normally. Every ~0.1 seconds, a **timer interrupt** fires and the CPU enters the kernel.
-
-### Step 3: Kernel Counts Down on Each Timer Tick
-Inside `usertrap()` in `kernel/trap.c`, on every timer interrupt:
-```
-tick 1: alarm_ticks_left = 4  → not yet, keep going
-tick 2: alarm_ticks_left = 3  → not yet
-tick 3: alarm_ticks_left = 2  → not yet
-tick 4: alarm_ticks_left = 1  → not yet
-tick 5: alarm_ticks_left = 0  → ALARM FIRES!
-```
-
-### Step 4: Alarm Fires — Kernel Saves State and Redirects
-When the countdown reaches 0:
-1. The kernel **saves the entire trapframe** (all 32 CPU registers + program counter) into `alarm_saved_tf`
-2. The kernel **overwrites the program counter** (`epc`) to point to `alarm_handler`
-3. Sets `alarm_active = 1` to prevent double-firing
-4. Returns to user space → the CPU now executes `alarm_handler` instead of the busy loop
-
-### Step 5: Handler Runs and Returns
-```c
-void alarm_handler(void) {
-    alarm_count++;                                          // Increment counter
-    printf(">>> ALARM FIRED! (count = %d) <<<\n", alarm_count); // Print message
-    alarm_return();                                         // Tell kernel: "I'm done"
-}
-```
-When `alarm_return()` is called:
-1. The kernel **restores the saved trapframe** back into the process
-2. Resets `alarm_ticks_left = 5` (start counting again)
-3. Clears `alarm_active = 0` (allow future alarms)
-4. The process **resumes the busy loop** exactly where it was interrupted
-
-### Step 6: Repeat
-The cycle repeats. After 5 more ticks, the alarm fires again (count = 2), then again (count = 3). When `alarm_count` reaches 3, the busy loop's condition `alarm_count < 3` becomes false, and the program moves on to Test 2.
-
----
-
-## How the Kernel Does It — Trapframe Save/Restore
-
-The **trapframe** is the critical data structure. It holds all 32 CPU registers and the program counter. Here's the flow diagram:
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│  User Process Running (e.g., busy loop at address 0x1234)   │
-└─────────────────────────────┬───────────────────────────────┘
-                              │ Timer interrupt!
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Kernel: usertrap()                                         │
-│  1. Decrement alarm_ticks_left                              │
-│  2. If reached zero:                                        │
-│     a. SAVE entire trapframe → alarm_saved_tf               │
-│     b. Set trapframe->epc = alarm_handler address           │
-│     c. Set alarm_active = 1 (prevent re-entry)              │
-└─────────────────────────────┬───────────────────────────────┘
-                              │ Return to user space
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│  User: alarm_handler() executes                             │
-│  - Prints ">>> ALARM FIRED! <<<" message                    │
-│  - Calls alarm_return()                                     │
-└─────────────────────────────┬───────────────────────────────┘
-                              │ System call
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│  Kernel: sys_alarm_return()                                 │
-│  1. RESTORE alarm_saved_tf → trapframe                      │
-│  2. Reset alarm_ticks_left = alarm_interval                 │
-│  3. Clear alarm_active = 0                                  │
-└─────────────────────────────┬───────────────────────────────┘
-                              │ Return to user space
-                              ▼
-┌─────────────────────────────────────────────────────────────┐
-│  User Process Resumes at original address 0x1234            │
-│  (all registers restored — process doesn't know it          │
-│   was interrupted!)                                         │
-└─────────────────────────────────────────────────────────────┘
-```
-
-### Why `alarm_active` Is Needed
-
-Without this guard flag, if the alarm handler takes longer than `N` ticks to execute, the kernel would try to fire the alarm *again* while the handler is still running—corrupting the saved trapframe. The `alarm_active` flag prevents this re-entrant scenario.
-
----
-
-## Files Modified and What Each Change Does
-
-| # | File | What Was Changed | Why |
-|---|------|-----------------|-----|
-| 1 | `kernel/proc.h` | Added 5 new fields to `struct proc` | Each process needs its own alarm state (interval, handler, countdown, guard flag, saved registers) |
-| 2 | `kernel/proc.c` | Initialize alarm fields in `allocproc()`, cleanup in `freeproc()`, copy in `kfork()` | When a process is created, its alarm must start as disabled; when it forks, the child inherits the alarm; when it exits, the alarm memory must be freed |
-| 3 | `kernel/syscall.h` | Added `#define SYS_alarm_signal 22` and `#define SYS_alarm_return 23` | Every system call needs a unique number so the kernel can identify which call the user is making |
-| 4 | `kernel/syscall.c` | Added `sys_alarm_signal` and `sys_alarm_return` to the dispatch table | The kernel uses this table to map system call numbers to their handler functions |
-| 5 | `kernel/sysproc.c` | Implemented `sys_alarm_signal()` and `sys_alarm_return()` functions | These are the actual kernel functions that set up the alarm and restore the trapframe |
-| 6 | `kernel/trap.c` | Added alarm countdown + trapframe save/redirect logic in `usertrap()` | This is the **core logic** — on every timer tick, check if alarm should fire and redirect the process |
-| 7 | `user/user.h` | Added function declarations for `alarm_signal()` and `alarm_return()` | User programs need to know these functions exist so they can call them |
-| 8 | `user/usys.pl` | Added assembly stub entries | Generates the assembly code that makes the actual `ecall` instruction to enter the kernel |
-| 9 | `user/alarm_test.c` | **NEW FILE** — Test program with 3 tests | Demonstrates and validates the alarm system call works correctly |
-| 10 | `Makefile` | Added `_alarm_test` to `UPROGS` list | Tells the build system to compile the test program and include it in the xv6 disk image |
-
----
-
-## Key Code Changes
-
-### 1. `struct proc` — New Alarm Fields (`kernel/proc.h`)
-
-```c
-// Alarm signal fields
-int alarm_interval;            // Timer interval in ticks (0 = disabled)
-uint64 alarm_handler;          // User-space handler function address
-int alarm_ticks_left;          // Countdown to next alarm firing
-int alarm_active;              // Guard: 1 while handler is executing
-struct trapframe *alarm_saved_tf; // Saved trapframe for alarm_return()
-```
-
-### 2. Alarm Check in `usertrap()` (`kernel/trap.c`)
-
-This is the **most important code** — it runs on every timer interrupt:
-
-```c
-// On every timer tick, check if this process has a pending alarm.
 if(which_dev == 2 && p->alarm_interval > 0 && p->alarm_active == 0) {
   p->alarm_ticks_left--;
   if(p->alarm_ticks_left <= 0) {
-    // Save the entire trapframe so alarm_return() can restore it.
     memmove(p->alarm_saved_tf, p->trapframe, sizeof(struct trapframe));
-    // Redirect the process to execute the alarm handler.
     p->trapframe->epc = p->alarm_handler;
-    // Prevent re-entrant alarms while handler is running.
     p->alarm_active = 1;
   }
 }
 ```
 
-**Line-by-line explanation:**
-- `which_dev == 2` → This was a timer interrupt (not keyboard or disk)
-- `p->alarm_interval > 0` → This process has an alarm set
-- `p->alarm_active == 0` → The handler is not already running
-- `p->alarm_ticks_left--` → Count down one tick
-- `memmove(...)` → Copy all registers to the backup
-- `p->trapframe->epc = p->alarm_handler` → Change where the process will resume — instead of returning to the busy loop, it will jump to the handler
-- `p->alarm_active = 1` → Block further alarms until handler finishes
+### Test Program Details
 
-### 3. Trapframe Restore in `sys_alarm_return()` (`kernel/sysproc.c`)
+The test program demonstrates three scenarios:
 
-```c
-uint64 sys_alarm_return(void) {
-  struct proc *p = myproc();
-  // Copy the saved registers back, restoring the exact CPU state
-  memmove(p->trapframe, p->alarm_saved_tf, sizeof(struct trapframe));
-  // Start counting ticks again for the next alarm
-  p->alarm_ticks_left = p->alarm_interval;
-  // Allow alarms to fire again
-  p->alarm_active = 0;
-  return p->trapframe->a0;
-}
-```
+**Test 1: Periodic Alarm (5-tick interval, 3 firings)**
+- Proves the alarm **repeats** automatically
+- Each firing increments global counter
+- Loop exits after 3 firings
 
-### 4. The Alarm Handler in User Space (`user/alarm_test.c`)
+**Test 2: Disabling Alarm**
+- Sets interval to 0
+- Spins for long time
+- Verifies no alarms fire during this period
 
-This is the code that prints `">>> ALARM FIRED! (count = 1) <<<"`:
+**Test 3: Different Interval (10-tick interval, 2 firings)**
+- Proves the system works with **any** tick value
+- Counter continues from Test 1 (reaches 4 and 5)
 
-```c
-// Global counter — starts at 0, incremented each time the alarm fires
-volatile int alarm_count = 0;
-
-void alarm_handler(void)
-{
-  alarm_count++;    // 0→1 on first firing, 1→2 on second, 2→3 on third
-  printf(">>> ALARM FIRED! (count = %d) <<<\n", alarm_count);
-  alarm_return();   // MUST call this — tells kernel to restore saved state
-}
-```
-
-**How the count works:**
-- The variable `alarm_count` is **global** and marked `volatile` (so the compiler doesn't optimize away reads from it)
-- First alarm firing: `alarm_count` goes from 0 → 1, prints `count = 1`
-- Second alarm firing: `alarm_count` goes from 1 → 2, prints `count = 2`
-- Third alarm firing: `alarm_count` goes from 2 → 3, prints `count = 3`
-- The main busy loop checks `while (alarm_count < 3)` — once count reaches 3, the loop exits
-
----
-
-## Test Program — Detailed Explanation
-
-### Test 1: Periodic Alarm (5-tick interval, 3 firings)
-```c
-alarm_signal(5, alarm_handler);    // Set alarm for every 5 ticks
-while (alarm_count < 3) { }       // Busy loop — wait for 3 firings
-```
-- **Why 3 firings?** We chose 3 to prove the alarm is **repeating** — it's not a one-time event. After each firing, `alarm_return()` resets the countdown and the alarm fires again. Three firings prove the cycle works correctly.
-
-### Test 2: Disabling the Alarm
-```c
-alarm_signal(0, 0);                // Disable — set interval to 0
-for (int i = 0; i < 500000000; i++) { }  // Spin for a long time
-```
-- After disabling, we spin for a long time. If no alarm fires during this period, the disable works correctly.
-
-### Test 3: Different Interval (10-tick interval, 2 firings)
-```c
-alarm_signal(10, alarm_handler);   // Re-enable with 10 ticks
-while (alarm_count < target) { }   // Wait for 2 more firings
-```
-- **Why only 2 firings for Test 3?** Because we already proved the alarm repeats in Test 1 (3 firings). Test 3's purpose is different — it proves the system call works with **any tick value**, not just 5. Two firings is enough to confirm the 10-tick interval works. The alarm count continues from where it left off (count 4 and 5).
-
----
-
-## Execution Screenshot
-
-The screenshot below shows `alarm_test` running inside xv6 on QEMU. All 3 tests pass successfully:
-
-![alarm_test output showing all 3 tests passing in QEMU](alarm_test_output.png)
-
-**What the output shows:**
-- **Test 1**: Three `>>> ALARM FIRED! <<<` messages appear at count 1, 2, 3 — proving the 5-tick periodic alarm works
-- **Test 2**: No alarm messages appear — proving the alarm was successfully disabled
-- **Test 3**: Two more `>>> ALARM FIRED! <<<` messages at count 4, 5 — proving the 10-tick interval works
-- **Final line**: `ALL TESTS PASSED! alarm_signal works!`
-
----
-
-## How to Build and Run
+### Running the Demo
 
 ```bash
-# Navigate to the xv6 directory
-cd G7_Project1_xv6CustomizeSystemCalls/xv6/
-
-# Clean and build
+cd G7_Project1_xv6CustomizeSystemCalls/xv6
 make clean
-make qemu CPUS=1
+make CPUS=1 qemu
 
-# Inside xv6 shell, run the test
+# Inside xv6 shell:
 $ alarm_test
 ```
 
-## Five System Call Functionalities Covered
+**Expected Output:**
+```
+Test 1: Periodic alarm (5-tick interval, 3 firings)
+>>> ALARM FIRED! (count = 1) <<<
+>>> ALARM FIRED! (count = 2) <<<
+>>> ALARM FIRED! (count = 3) <<<
+Test 1 passed!
 
-This project satisfies the requirement of modifying/implementing system calls across multiple OS functionality areas:
+Test 2: Disable alarm (should see no alarms during long spin)
+Test 2 passed!
 
-1. **Signals** — `alarm_signal()` implements a SIGALRM-like timer signal mechanism
-2. **Process Control** — The kernel tracks per-process alarm state and controls execution flow
-3. **Inter-Process Communication** — The trapframe save/restore mechanism is a form of kernel-to-user signaling
-4. **Process Creation** — `kfork()` was modified to properly inherit alarm state to child processes
-5. **Locks / Concurrency** — The `alarm_active` re-entrancy guard prevents race conditions when the handler runs longer than the alarm interval
-# Message Passing IPC --Gaurav
+Test 3: Different interval (10-tick interval, 2 firings)
+>>> ALARM FIRED! (count = 4) <<<
+>>> ALARM FIRED! (count = 5) <<<
+Test 3 passed!
 
-This project adds message-passing inter-process communication to xv6.
-
-The implementation introduces two new system calls, `sendmsg` and `recvmsg`, and backs them with a per-process single-slot mailbox in the kernel. The design uses blocking semantics so that communication behaves like a simple synchronous IPC mechanism.
-
-## Overview
-
-Each process owns one mailbox slot.
-
-- `sendmsg` places one message into the target process's mailbox.
-- `recvmsg` removes one message from the caller's mailbox.
-- If the mailbox is full, `sendmsg` blocks until the receiver consumes the message.
-- If the mailbox is empty, `recvmsg` blocks until a sender provides data.
-
-This keeps the implementation compact while still demonstrating synchronization, sleep/wakeup behavior, and kernel-managed IPC.
-
-## System Call Interface
-
-### `sendmsg`
-
-User-space prototype:
-
-```c
-int sendmsg(int pid, void *msg, int len);
+ALL TESTS PASSED! alarm_signal works!
 ```
 
-Description:
+![Alarm system call demo output](screenshots/alarm_test_output.png)
 
-- Sends `len` bytes from the calling process to process `pid`.
-- Copies data from the sender's address space into the receiver's mailbox.
-- Returns `0` on success.
-- Returns `-1` on invalid input or failure.
+---
 
-Behavior:
+## 2. Message Passing IPC | Contributor: Gaurav
 
-- Rejects messages larger than `MSGSIZE`.
-- Blocks while the destination mailbox is full.
-- Wakes the receiver after storing a message.
+### Overview
 
-### `recvmsg`
+Implements **mailbox-based process-to-process inter-process communication** with single-slot blocking semantics. Two processes can exchange messages through kernel-managed mailboxes that enforce synchronous one-message-at-a-time communication.
 
-User-space prototype:
+### System Calls
 
+#### `sendmsg(int pid, void *msg, int len)`
+- **pid**: Target process ID
+- **msg**: Pointer to message data
+- **len**: Message length (max MSGSIZE = 128 bytes)
+- **Returns**: 0 on success, -1 on failure
+- **Behavior**: Blocks if recipient's mailbox is full; wakes recipient after delivery
+
+#### `recvmsg(int *src_pid, void *buf, int maxlen)`
+- **src_pid**: Pointer to where sender's PID will be stored
+- **buf**: Buffer to receive message
+- **maxlen**: Maximum bytes to copy
+- **Returns**: Number of bytes copied, -1 on failure
+- **Behavior**: Blocks if mailbox is empty; wakes any blocked senders after consuming
+
+### Design
+
+**Single-Slot Mailbox**: Each process owns one message slot, not a queue. This keeps implementation simple while demonstrating core IPC concepts.
+
+**Blocking Semantics**:
+- **Sender blocks** while receiver's mailbox is full
+- **Receiver blocks** while its mailbox is empty
+- Successful send wakes blocked receiver
+- Successful receive wakes blocked senders
+
+### Implementation Details
+
+**Mailbox Structure in `struct proc`:**
 ```c
-int recvmsg(int *src_pid, void *buf, int maxlen);
+struct spinlock msg_lock;      // Synchronization
+int mailbox_full;              // Slot occupied?
+int mailbox_src_pid;           // Sender's PID
+int mailbox_len;               // Payload size
+char mailbox_data[MSGSIZE];    // Message bytes (MSGSIZE=128)
 ```
 
-Description:
+**Files Modified:**
 
-- Receives the pending mailbox message for the calling process.
-- Copies the sender pid into `*src_pid`.
-- Copies up to `maxlen` bytes into `buf`.
-- Returns the number of bytes copied.
-- Returns `-1` on invalid input or failure.
+| File | Changes |
+|------|---------|
+| `kernel/proc.h` | Added mailbox fields to `struct proc` |
+| `kernel/proc.c` | Initialize in `allocproc()`, clear in `freeproc()` |
+| `kernel/syscall.h` | Added SYS_sendmsg, SYS_recvmsg |
+| `kernel/syscall.c` | Added syscall dispatch entries |
+| `kernel/sysproc.c` | Implemented `sys_sendmsg()` and `sys_recvmsg()` |
+| `user/user.h` | Added function prototypes |
+| `user/usys.pl` | Added assembly stubs |
+| `user/mailboxtest.c` | **NEW**: Test program |
+| `Makefile` | Added `_mailboxtest` to UPROGS |
 
-Behavior:
+### Test Program
 
-- Blocks while the mailbox is empty.
-- Clears the mailbox after a successful receive.
-- Wakes any blocked sender after consuming the message.
+Demonstrates blocking IPC:
+1. Parent sends first message → succeeds immediately
+2. Parent attempts second message → blocks (receiver's mailbox still full)
+3. Child receives first message → succeeds, wakes parent
+4. Parent's second send now completes
+5. Child receives second message
 
-## Kernel Changes
+This proves:
+- One-slot enforcement (sender blocks on full mailbox)
+- Message ordering is preserved
+- Wakeup mechanism works correctly
 
-The mailbox is stored directly in `struct proc`.
-
-Added fields:
-
-- `msg_lock` for synchronization
-- `mailbox_full` to indicate whether the slot is occupied
-- `mailbox_src_pid` to record the sender
-- `mailbox_len` to store the payload size
-- `mailbox_data[MSGSIZE]` to store the payload bytes
-
-`MSGSIZE` is defined as `128` bytes.
-
-Initialization and cleanup:
-
-- Mailbox fields are initialized in `allocproc`.
-- Mailbox state is cleared again in `freeproc`.
-
-## Blocking Model
-
-The mailbox uses xv6 sleep/wakeup primitives to coordinate senders and receivers.
-
-- A sender sleeps while the receiver's mailbox is full.
-- A receiver sleeps while its mailbox is empty.
-- Successful send operations wake the waiting receiver.
-- Successful receive operations wake waiting senders.
-
-This provides a deterministic one-message-at-a-time communication path.
-
-## Files Modified
-
-### Kernel
-
-- `xv6/kernel/proc.h` - added mailbox fields to `struct proc`
-- `xv6/kernel/proc.c` - initialized and cleared mailbox state
-- `xv6/kernel/sysproc.c` - implemented `sys_sendmsg` and `sys_recvmsg`
-- `xv6/kernel/syscall.h` - added syscall numbers
-- `xv6/kernel/syscall.c` - registered syscall handlers
-
-### User Space
-
-- `xv6/user/user.h` - added user-space prototypes
-- `xv6/user/usys.pl` - generated syscall stubs
-- `xv6/user/mailboxtest.c` - test program for blocking IPC
-
-### Build System
-
-- `xv6/Makefile` - added `_mailboxtest` to the user program list
-
-## Test Program
-
-The user test program `mailboxtest` demonstrates the IPC flow.
-
-Scenario:
-
-1. Parent sends the first message.
-2. Parent attempts to send a second message and blocks if the mailbox is still occupied.
-3. Child receives the first message.
-4. The blocked sender is unblocked.
-5. Child receives the second message.
-
-This confirms that the mailbox enforces one-slot communication and proper blocking behavior.
-
-## Build and Run
-
-From the `xv6/` directory:
+### Running the Demo
 
 ```bash
-make qemu
+# Inside xv6 shell:
+$ mailboxtest
 ```
 
-Inside the xv6 shell:
-
-```bash
-mailboxtest
+**Expected Output:**
+```
+Parent sending message 1 to child
+Child received from parent: message 1
+Parent sending message 2 to child
+Child received from parent: message 2
+IPC test passed!
 ```
 
-Expected output shows the sender pid and the two messages being transferred in order.
-
-## Notes
-
-- The mailbox is intentionally a single-slot buffer rather than a queue.
-- The design is focused on clarity and synchronization, not throughput.
-- This implementation is suitable for demonstrating core IPC concepts in xv6.
-
-# 📌 Project 1 – xv6 System Call Customization  (getprocinfo) --John
-
-## 👤 Contribution Scope
-
-This module focuses on **process inspection and metadata enhancement** in the xv6 operating system. It introduces new system calls and extends process structures to enable user-space programs to retrieve detailed information about running processes.
+![Mailbox IPC demo output](screenshots/maiboxtest_message_passing.jpeg)
 
 ---
 
-## 🚀 Implemented Features
+## 3. Process Information System Calls | Contributor: John
 
-### 1. `getppid()` System Call
+### Overview
 
-Returns the parent process ID of the calling process.
+Extends xv6 with **process metadata inspection** capabilities. User programs can query detailed information about any process: state, memory size, parent relationship, and priority. Enables building process management tools like `ps`.
 
-**Purpose:**
+### System Calls
 
-* Understand process hierarchy
-* Validate parent-child relationships
+#### `getppid()`
+- Returns: Parent process ID of calling process
+- Use: Understand process hierarchy and family relationships
 
-**Example Output:**
+#### `getprocinfo(int pid, struct procinfo *info)`
+- **pid**: Target process ID
+- **info**: Pointer to procinfo structure (filled by kernel)
+- **Returns**: 0 on success, -1 on failure
+- **Behavior**: Kernel copies process metadata to user space
 
-```
-PID: 3, PPID: 2
-```
+### Data Structures
 
----
-
-### 2. `getprocinfo(int pid, struct procinfo *info)` System Call
-
-Retrieves detailed information about a specific process.
-
-**Fields Returned:**
-
-* `pid` → Process ID
-* `state` → Process state (RUNNING, SLEEPING, etc.)
-* `sz` → Memory size
-* `parent_pid` → Parent process ID
-* `priority` → Process priority
-
----
-
-## 🧠 Data Structures
-
-### Kernel Side (`kernel/proc.h`)
-
+**`struct procinfo`:**
 ```c
 struct procinfo {
-    int pid;
-    int state;
-    int sz;
-    int parent_pid;
-    int priority;
+    int pid;           // Process ID
+    int state;         // Process state (UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE)
+    int sz;            // Memory size in bytes
+    int parent_pid;    // Parent process ID (-1 if no parent)
+    int priority;      // Scheduling priority (added by Happy Saxena's work)
 };
 ```
 
-### Process Structure Extension
+### Implementation Details
 
-```c
-struct proc {
-    ...
-    int priority;   // Added field
-};
+**Files Modified:**
+
+| File | Changes |
+|------|---------|
+| `kernel/proc.h` | Added `priority` field to `struct proc`; defined `struct procinfo` |
+| `kernel/proc.c` | Process table traversal in syscall handler |
+| `kernel/syscall.h` | Added SYS_getppid, SYS_getprocinfo |
+| `kernel/syscall.c` | Added syscall dispatch entries |
+| `kernel/sysproc.c` | Implemented `sys_getppid()` and `sys_getprocinfo()` |
+| `user/user.h` | Added function prototypes |
+| `user/usys.pl` | Added assembly stubs |
+| `user/getprocinfo.c` | **NEW**: Test/demo program with ps-like output |
+| `Makefile` | Added `_getprocinfo` to UPROGS |
+
+**Key Implementation Challenges Overcome:**
+
+1. **Kernel-User Data Transfer**: Direct struct return impossible across privilege boundary → Solution: Use `copyout()` to safely transfer from kernel to user space
+
+2. **Process Traversal**: Safely iterate `proc[NPROC]` while protecting against concurrent modifications → Solution: Use appropriate locking during table scan
+
+3. **Structure Synchronization**: Keep `procinfo` identical in both kernel and user → Solution: Shared header files and careful definition management
+
+### Test Program
+
+Displays ps-like process table with columns:
+- PID, STATE, SIZE, PARENT PID, PRIORITY
+
+Supports optional filtering and demonstrates safe kernel-user data boundaries.
+
+### Running the Demo
+
+```bash
+# Inside xv6 shell:
+$ getprocinfo
 ```
 
----
-
-## ⚙️ System Call Workflow
-
-```
-User Program (testproc.c)
-        ↓
-User Stub (usys.pl → usys.S)
-        ↓
-sys_getprocinfo() (sysproc.c)
-        ↓
-Process Table Traversal (proc[])
-        ↓
-copyout() → User Space
-```
-
----
-
-## 🧪 Test Program (`testproc.c`)
-
-A user-level program was developed to:
-
-* Invoke system calls
-* Display process details in a formatted table (ps-like view)
-
-### Sample Output
-
+**Expected Output:**
 ```
 PID     STATE           SIZE    PARENT  PRIORITY
 ------------------------------------------
@@ -556,276 +350,645 @@ PID     STATE           SIZE    PARENT  PRIORITY
 3       RUNNING         16384   2       5
 ```
 
----
-
-## 🔧 Key Implementation Details
-
-### Argument Handling
-
-* `argint()` → fetch integer arguments
-* `argaddr()` → fetch pointer arguments
-
-### Memory Transfer
-
-* `copyout()` used to safely transfer data from kernel to user space
-
-### Process Traversal
-
-* Iteration over `proc[NPROC]` to locate matching PID
+![Process info demo output](screenshots/getprocinfo.png)
 
 ---
 
-## ⚠️ Challenges Faced
+## 4. Syscall Logger Enhancement | Contributor: Yesaswini
 
-1. **Kernel-User Data Transfer**
+### Overview
 
-   * Direct struct return is not possible → solved using `copyout()`
+Provides **real-time syscall activity logging** by intercepting every system call in the kernel dispatch path. Instead of flooding output during execution, calls are buffered and printed after process completion, keeping runtime output clean and readable.
 
-2. **xv6-riscv Differences**
+### What It Does
 
-   * `argint()` and `argaddr()` return `void` (not int)
+The syscall logger intercepts the kernel's `syscall()` function—the central dispatcher that routes all system calls. For each call, it:
+1. Records the syscall number and name
+2. Stores in per-process buffer
+3. Prints buffer contents **after process finishes** (in `freeproc()`)
 
-3. **Structure Synchronization**
+### Implementation Details
 
-   * Ensured identical `procinfo` struct in both kernel and user space
+**Buffer Storage in `struct proc`:**
+```c
+char syscall_log[100];     // Log buffer
+int syscall_count;         // Number of calls logged
+```
 
-4. **Formatting Output**
+**Files Modified:**
 
-   * Implemented aligned printing for readability
+| File | Changes |
+|------|---------|
+| `kernel/syscall.c` | Added `syscall_names[]` array mapping numbers to names; added logging logic after each syscall dispatch |
+| `kernel/proc.h` | Added `syscall_log[]` and `syscall_count` to `struct proc` |
+| `kernel/proc.c` | Initialize buffer in `allocproc()`; print and reset in `freeproc()` |
 
----
+**Key Features:**
 
-## 📈 Enhancements Made
+- **Selective Logging**: Filters exclude `write()`, `read()`, and `sh` process logs to focus on more interesting activity
+- **Buffered Output**: Accumulates all logs during process lifetime, then emits in one block
+- **Minimal Overhead**: Logging happens in already-expensive syscall path, nearly zero additional cost
+- **Deferred Printing**: Output appears after process finishes, not interleaved with program output
 
-* Added `priority` field to process structure
-* Introduced human-readable process states
-* Built a **ps-like process viewer** in user space
+### Challenges Overcome
 
----
+1. **Terminal Flooding**: Initial implementation printed every syscall immediately, making output unreadable
+   - Solution: Buffer each process's logs and flush in `freeproc()`
 
-## 🧩 Learning Outcomes
+2. **Double Syscall Execution**: Logger accidentally executed syscall twice
+   - Solution: Merge logging into single syscall dispatch block
 
-* System call design and implementation
-* Kernel-user boundary handling
-* Process table management
-* Safe memory operations (`copyout`)
-* Struct synchronization across layers
+3. **Buffer Lifecycle**: Correctly time print operations relative to process exit
+   - Solution: Place print logic in `freeproc()` where cleanup happens
 
----
+### Running the Demo
 
-## ✅ Conclusion
+```bash
+# Inside xv6 shell - any program will show its syscalls after completion:
+$ syscall_test
+$ getprocinfo
+$ mailboxtest
+```
 
-This module transforms xv6 from a basic OS into a more **introspective system**, enabling users to:
+**Expected Pattern:**
+```
+[Program output appears first]
+[Regular execution]
 
-* Inspect process states
-* Understand process relationships
-* Analyze memory usage and scheduling attributes
+[After process finishes, syscall log appears:]
+>>> Syscalls: read write close fork wait open ...
+```
 
-The implementation demonstrates practical understanding of **operating system internals and system call mechanisms**.
-
----
-
-# Syscall Logger Enhancement --Yesaswini
-
-This part adds a **real-time syscall logging mechanism** to xv6 that captures every system call made by a process ( filters write, read and "sh" processes ) and displays them **after the process completes** - keeping the output clean and readable.
-
----
-
-## What this syscall() function does actually
-
-In the context of xv6, the syscall() function acts like a traffic controller. It is the central junction that takes a request from the user program and routes it to the correct part of the operating system kernel. Here is the breakdown of what it does step-by-step:
-
-1. **It identifies the request:** When a user program (like our syscall logger) wants the kernel to do something, it puts a **System call number** into a specific CPU register. The syscall() function reads this number from the process's Trap Frame.
-
-2. **It validates the call:** The function checks if the provided number is valid.
-   * **If valid:** It uses that number as an index to look up a function pointer in a table (usually called syscalls[]).
-   * **If invalid:** It prints an error message (like "unknown syscall") and returns -1.
-
-3. **It executes and stores the result:** Once it finds the correct internal function (like sys_fork, sys_write, or any others), it runs that function.
-
-   After the kernel function finished, syscall() takes the return value and saves it back into the register of the trap frame so the user program can see if the operation succeeded or failed.
+![Syscall logger output](screenshots/getprocinfo.png)
 
 ---
 
-## What was implemented
+## 5. Synchronization with Semaphores | Contributor: Ishika
 
-A buffer based syscall logger that:
+### Overview
 
-* Intercepts every syscall in the kernel
-* Stores them during process execution
-* Prints all syscalls together after the process finishes - not during execution
+Implements **counting semaphores** for process synchronization and mutual exclusion. Provides classic semaphore operations (init, wait, signal) with kernel-managed sleep/wakeup to prevent busy-waiting.
+
+### System Calls
+
+#### `sem_init(int value)`
+- **value**: Initial semaphore count
+- **Returns**: Semaphore ID or -1 on error
+- **Allocates** a new kernel semaphore
+
+#### `sem_wait(int sem_id)`
+- **sem_id**: Semaphore identifier
+- **Behavior**: Decrements count; blocks if count ≤ 0
+- **Returns**: 0 on success
+
+#### `sem_signal(int sem_id)`
+- **sem_id**: Semaphore identifier
+- **Behavior**: Increments count; wakes one waiting process
+- **Returns**: 0 on success
+
+### Synchronization Mechanics
+
+**Semaphore Struct:**
+```c
+struct sem {
+    int value;           // Counter
+    struct spinlock lock; // Atomic operations
+};
+```
+
+**Wait Operation** (pseudo-code):
+```
+acquire lock
+while (value <= 0) {
+    sleep on semaphore
+}
+value--
+release lock
+```
+
+**Signal Operation** (pseudo-code):
+```
+acquire lock
+value++
+wakeup one waiting process on this semaphore
+release lock
+```
+
+### Implementation Details
+
+**Files Modified:**
+
+| File | Changes |
+|------|---------|
+| `kernel/proc.h` | Defined `struct sem` with value and spinlock |
+| `kernel/sem.c` | **NEW**: Implemented `sem_init()`, `sem_wait()`, `sem_signal()` |
+| `kernel/syscall.h` | Added SYS_sem_init, SYS_sem_wait, SYS_sem_signal |
+| `kernel/syscall.c` | Added syscall dispatch entries (IDs 22-24) |
+| `kernel/sysproc.c` | System call wrappers; restored `sys_sleep()` for user timing |
+| `user/user.h` | Added function prototypes |
+| `user/usys.pl` | Added assembly stubs |
+| `user/semtest.c` | **NEW**: Test program demonstrating parent-child sync |
+| `Makefile` | Added `_semtest` to UPROGS |
+
+### Test Program
+
+Demonstrates classic wait/signal pattern:
+1. **Parent**: Forks child, waits for child to signal
+2. **Child**: Performs work, then signals parent
+3. Proves: Child successfully blocks on wait, parent successfully unblocks on signal
+
+### Running the Demo
+
+```bash
+# Inside xv6 shell:
+$ semtest
+```
+
+**Expected Output:**
+```
+Parent: waiting on semaphore
+Child: working... (10-tick delay)
+Child: done, signaling parent
+Parent: unblocked! Semaphore works!
+```
+
+![Semaphore test output](screenshots/semtest_results.png)
 
 ---
 
-## Files modified
+## 6. Execution Control and Scheduling System Calls | Contributor: Happy Saxena
 
-* `kernel/syscall.c` - Added `syscall_names[]` array mapping syscall numbers to names. Added buffer storage logic after each syscall executes.
+### Overview
 
-* `kernel/proc.h` - Added `syscall_log[100]` and `syscall_count` to proc struct.
+Extends xv6 with **process execution control** and replaces the default Round-Robin scheduler with a **Priority-Based Scheduler**. Introduces cooperative multitasking, resource limits, and dynamic priority adjustment.
 
-* `kernel/proc.c` - Initialize buffer in `allocproc()`. Print and  reset buffer in `freeproc()` when process exists.
+### System Calls
+
+#### `yield_cpu()`
+- **Purpose**: Voluntarily release CPU before time slice expires
+- **Behavior**: Process yields to other runnable processes
+- **Use**: Cooperative multitasking; processes can defer execution
+- **Returns**: Always 0
+
+#### `sleep_for(int ticks)`
+- **Purpose**: Suspend execution for specified number of timer ticks
+- **ticks**: Number of hardware timer interrupts to sleep
+- **Use**: Implement precise delays without busy-waiting
+- **Returns**: 0 on success
+
+#### `fork_with_limit(int limit)`
+- **Purpose**: Create child with resource constraint
+- **limit**: Maximum number of child processes allowed (0 = no limit)
+- **Behavior**: Parent enforces limit; additional forks return -1
+- **Use**: Prevent fork bombs; resource management
+- **Returns**: Child PID in parent, 0 in child, -1 on failure
+
+#### `set_priority(int pid, int priority)`
+- **Purpose**: Dynamically adjust process priority
+- **pid**: Target process ID
+- **priority**: New priority value (higher = higher priority)
+- **Behavior**: Scheduler now selects highest-priority runnable process
+- **Use**: Prioritize important tasks; defer background work
+- **Returns**: 0 on success, -1 on error
+
+### Priority-Based Scheduler
+
+**Design**: While default xv6 uses Round-Robin (all processes get equal time), this enhancement implements **priority-based selection**:
+
+```
+On each scheduler() invocation:
+1. Scan all processes
+2. Among RUNNABLE processes:
+   - Find process with HIGHEST priority value
+   - If multiple processes have same priority: use Round-Robin among them
+3. Context switch to selected process
+```
+
+**Key Advantage**: Important processes get more CPU time automatically.
+
+### Implementation Details
+
+**Fields Added to `struct proc`:**
+```c
+int priority;          // Scheduling priority
+int fork_limit;        // Max child processes allowed
+int child_count;       // Current number of children
+```
+
+**Files Modified:**
+
+| File | Changes |
+|------|---------|
+| `kernel/proc.h` | Added priority, fork_limit, child_count fields |
+| `kernel/proc.c` | Initialize in `allocproc()`; enforce limit in `fork()`; **rewrote scheduler()** for priority selection |
+| `kernel/sysproc.c` | Implemented all four system call handlers |
+| `kernel/syscall.h` | Added SYS_yield_cpu, SYS_sleep_for, SYS_fork_with_limit, SYS_set_priority |
+| `kernel/syscall.c` | Added syscall dispatch entries |
+| `user/user.h` | Added function prototypes |
+| `user/usys.pl` | Added assembly stubs |
+| `user/testyield.c` | **NEW**: Test for `yield_cpu()` |
+| `user/testsleep.c` | **NEW**: Test for `sleep_for()` |
+| `user/testforklimit.c` | **NEW**: Test for `fork_with_limit()` |
+| `user/testpriority.c` | **NEW**: Test for priority scheduler |
+| `Makefile` | Added all test programs to UPROGS |
+
+### Scheduler Implementation
+
+The core rewrite in `scheduler()`:
+
+```c
+// Original (Round-Robin): cycles through processes in order
+// New (Priority-Based): selects highest priority
+
+for (int i = 0; i < NPROC; i++) {
+    p = &proc[i];
+    if (p->state == RUNNABLE) {
+        // Find max priority among runnable
+        if (p->priority > max_priority) {
+            max_priority = p->priority;
+            selected = p;
+        }
+    }
+}
+// Context switch to selected process
+```
+
+### Test Programs
+
+**testyield**: Demonstrates cooperative multitasking
+```bash
+$ testyield
+```
+
+**testsleep**: Tests timer-based delays
+```bash
+$ testsleep 50
+```
+
+**testforklimit**: Verifies fork limiting
+```bash
+$ testforklimit 2
+```
+Expected: Can create 2 children (plus self = 3 total), fork fails for 3rd.
+
+**testpriority**: Demonstrates priority scheduling
+```bash
+$ testpriority 5 10 20
+```
+Expected: Processes with priority 20 get more CPU time, priority 5 get less.
+
+### Running the Demos
+
+```bash
+# Inside xv6 shell:
+$ testyield
+$ testsleep 50
+$ testforklimit 2
+$ testpriority 5 10 20
+```
+
+**Expected Behavior:**
+- **testyield**: Process yields, other processes run, original resumes
+- **testsleep**: Commands sleep specified number of ticks (observable delay)
+- **testforklimit**: Creates exactly N children, 3rd fork fails or blocks
+- **testpriority**: Higher-priority processes complete sooner
+
+![Scheduling demo output](screenshots/edf_algo.jpeg)
 
 ---
 
-## System Verification (Screenshots)
- 
-* **Kernel Boot Sequence:** When the xv6 kernel boots, the system initiates several background processes like **init** and **sh**. This logger captures these initial handshakes between the hardware and software.
+## Building and Running
 
-<img width="1920" height="981" alt="Screenshot (1)" src="https://github.com/user-attachments/assets/4fade284-fe0b-4f48-80c2-a0d11a732bd8" />
-The termial showing syscalls being logged automatically during the xv6 boot process.
+### Prerequisites
 
-* **User Program Execution:** Beyond boot-up, the logger also tracks specific user-run programs. This allows developers to see exactly how many **read**, **write** or **process = "sh"** calls a simple command actually triggers.
+Ensure you have the RISC-V toolchain and QEMU installed:
 
-<img width="1920" height="939" alt="Screenshot (6)" src="https://github.com/user-attachments/assets/4956dd7f-85ca-4c80-be61-b09d91156b23" />
-Here, you can also observe syscalls are printed just after their execution.
+```bash
+# On Ubuntu/Debian:
+sudo apt-get install build-essential git gdb-multiarch qemu-system-misc gcc-riscv64-linux-gnu binutils-riscv64-linux-gnu
+```
 
-* **Buffer Logger Enhancement:** Initially the terminal was flodded with system calls. This was fixed by implementing a buffer approach  - syscalls are now stored during execution and printed together after the process completes, keeping the output clean and readable. 
+### Build Steps
 
-<img width="1920" height="447" alt="Image" src="https://github.com/user-attachments/assets/6e879cc2-9324-453e-8721-8b44b912bd91" />
+1. **Navigate to xv6 directory**:
+   ```bash
+   cd G7_Project1_xv6CustomizeSystemCalls/xv6
+   ```
 
----
-
-## How to test
-
-To see the buffer logger in action:
-
-1. **Clean and Rebuild:**
+2. **Clean and build**:
    ```bash
    make clean
-   make qemu
+   make CPUS=1 qemu
+   ```
 
-2. **Run any program in xv6 shell:**
-   ```bash
-   $ syscall_test
-   $ getprocinfo
-   $ mailboxtest
+   **Note**: `CPUS=1` runs with a single processor, which keeps test behavior deterministic. Omit this flag for multi-CPU testing if desired.
 
-3. **Observe the output:**
-   Program output appears first followed by all system calls together at the end.
+3. **Wait for xv6 shell prompt**:
+   The build compiles the kernel and user programs, then boots QEMU. After boot messages, you'll see:
+   ```
+   xv6 kernel is booting
 
-4. **Verify:**
-   Each syscall made during the program execution will be printed.
-   After if finishes - not during!
+   hart 2 starting
+   hart 1 starting
+   init: starting sh
+   $
+   ```
+
+### Demonstrations
+
+Once in the xv6 shell, run these commands to test each feature:
+
+#### All-in-one Demo
+```bash
+$ alarm_test
+$ mailboxtest
+$ getprocinfo
+$ syscall_test
+$ semtest
+$ testyield
+$ testsleep 50
+$ testforklimit 2
+$ testpriority 5 10 20
+```
+
+#### Individual Demos
+
+**Alarm Signal Test** (3 tests in sequence):
+```bash
+$ alarm_test
+```
+
+**Message Passing IPC Test**:
+```bash
+$ mailboxtest
+```
+
+**Process Information Test**:
+```bash
+$ getprocinfo
+```
+
+**Syscall Logger Example** (any program will show its syscalls):
+```bash
+$ syscall_test
+```
+
+**Semaphore Synchronization Test**:
+```bash
+$ semtest
+```
+
+**Execution Control Tests**:
+```bash
+$ testyield           # Voluntary CPU yield
+$ testsleep 50        # Sleep for 50 ticks
+$ testforklimit 2     # Fork with limit of 2 children
+$ testpriority 5 10 20  # Priority-based scheduling
+```
+
+### Exiting QEMU
+
+Press: `Ctrl+a`, then `x`
 
 ---
 
-## Challenges faced
+## Project Statistics
 
-1. **Terminal flooding**
-   * Initially every syscall printed immediately
-   * Fixed using buffer approach
-
-2. **Double syscall execution**
-   * Logger accidentally called syscall twice
-   * Fixed by merging into single if block
-
-3. **Buffer printing after every syscall**
-   * Wrong placement of print logic
-   * Fixed it by placing it in the right spot in freeproc()
+| Aspect | Count |
+|--------|-------|
+| **System Calls Added** | 13 total |
+| **Kernel Files Modified** | 6 files |
+| **User Test Programs Created** | 7 programs |
+| **Contributor Teams** | 6 individuals |
+| **Core Kernel Subsystems Enhanced** | Signals, IPC, Process Mgmt, Scheduling, Synchronization |
 
 ---
 
 ## Learning Outcomes
 
-* Kernel process lifecycle management
+Through implementing this project, the team demonstrated mastery of:
 
-* Buffer management in kernel space
-
-* Syscall interception techniques
-
-* Process struct modification in xv6
-
----
-
-**This logger makes xv6 **transparent** - every syscall a process makes is captured and shown after it finishes, helping understand OS internals clearly.**
-
-# Category 4: Synchronization (Semaphores) --Ishika
-(implemented a counting semaphore system to manage process synchronization and prevent race conditions)
-
-###Implementation details:
-* **Semaphore Structure**: created a 'struct sem' in 'kernel/proc.h' containing an integer 'value' and a 'spinlock'
-* **Kernel logic ('kernel/sem.c')**:
-    * 'sem_init': initializes the semaphore value and the spinlock
-    * 'sem_wait': uses a 'while' loop to check the value. If it is '\le 0' then it calls the kernel 'sleep()' function to block the process.
-    * 'sem_signal': increments the value and calls 'wakeup()' to unblock the waiting processes
-* **System call mapping**: integrated the functions into 'syscall.h' and 'syscall.c' (IDs 22-25) and restored 'sys_sleep' in sysproc.c' to allow user-space timing.
-
-
-### Test results:
-The 'semtest' program proves the implementation works. 
-i.e. the parent process successfully uses 'sem_signal' to unblock the child process after a 10-tick delay.
-
-![Semaphore Test Output](semtest_results.png)  Stashed changes
-=======
-# Project 1: Custom System Calls and Priority Scheduling in xv6 --Happy Saxena
-
-This project focuses on extending the **xv6 operating system** by designing and implementing four custom system calls under the **Execution Control / Scheduling** category. The core of this project involves modifying the kernel's process management and transforming the default Round-Robin scheduler into a **Priority-Based Scheduler**.
-
-## 🛠 Features Implemented
-
-### 1. `yield_cpu()`
-Allows a process to voluntarily release the CPU before its time slice expires. This demonstrates **cooperative multitasking**, where processes can yield to others to improve system flow.
-
-### 2. `sleep_for(int ticks)`
-Suspends the execution of a process for a specific number of hardware timer ticks. This implementation utilizes the kernel's global `ticks` variable and the `sleep/wakeup` mechanism.
-
-### 3. `fork_with_limit(int limit)`
-A security-enhanced version of the standard `fork()`. It introduces resource management by allowing a process to set a maximum number of child processes it can create, preventing "fork bomb" scenarios.
-
-### 4. `set_priority(int pid, int priority)`
-The flagship feature of this project. It allows dynamic adjustment of a process's priority. We replaced the standard Round-Robin scheduler in `kernel/proc.c` with a **Priority Scheduler** that always selects the runnable process with the highest priority value.
+1. **System Call Interface**: Design and implementation of kernel-exposed APIs
+2. **Trapframe Manipulation**: Saving/restoring processor state for signal delivery
+3. **Process Synchronization**: Sleep/wakeup primitives, spinlocks, and semaphores
+4. **Scheduler Design**: Priority-based scheduling and process selection logic
+5. **Kernel-User Boundary**: Safe data transfer using `copyout()` and `copyin()`
+6. **Resource Management**: Limits enforcement (fork bombs) and lifecycle tracking
+7. **Kernel Data Structures**: Extension of `struct proc` for new functionality
+8. **Concurrency**: Proper locking and handling race conditions
 
 ---
 
-## 📁 Files Modified
+## Contributors
 
-### Kernel Space
-- **`kernel/proc.h`**: Added `priority`, `fork_limit`, and `child_count` to `struct proc`.
-- **`kernel/proc.c`**: 
-  - Modified `allocproc()` to initialize new process variables.
-  - Updated `fork()` to enforce child limits.
-  - **Rewrote `scheduler()`** to implement the Priority-Based selection logic.
-- **`kernel/sysproc.c`**: Implemented the kernel-side logic for the four new system calls.
-- **`kernel/syscall.h` / `kernel/syscall.c`**: Registered the new system call numbers and function pointers.
-
-### User Space
-- **`user/user.h`**: Added function prototypes for user programs.
-- **`user/usys.pl`**: Added entry points to generate assembly stubs.
-- **`user/testyield.c`**: Verification for cooperative multitasking.
-- **`user/testsleep.c`**: Verification for timer-based delays.
-- **`user/testforklimit.c`**: Verification for resource constraints.
-- **`user/testpriority.c`**: Verification for the Priority Scheduler.
+| Area | Contributor | GitHub | System Calls | Key Contributions |
+|------|-------------|--------|--------------|-------------------|
+| Alarm Signal | Sathish Kumar Jakkala | [GitHub](https://github.com/JakkalaSathishKumar1234) | `alarm_signal()`, `alarm_return()` | Trapframe save/restore mechanism, re-entrancy protection |
+| Message Passing IPC | Gaurav Patidar | [GitHub](https://github.com/gaurav7902) | `sendmsg()`, `recvmsg()` | Single-slot mailbox design, blocking semantics |
+| Process Information | John Gunji | [GitHub](https://github.com/johngunji) | `getppid()`, `getprocinfo()` | Kernel-user data transfer, process table traversal |
+| Syscall Logger | Yesaswini Gorja | [GitHub](https://github.com/Yesaswini29) | Enhanced `syscall()` path | Buffered logging, deferred output printing |
+| Semaphores | Ishika Acharya | [GitHub](https://github.com/mockingjay777) | `sem_init()`, `sem_wait()`, `sem_signal()` | Counting semaphores, sleep/wakeup synchronization |
+| Execution Control & Scheduling | Happy Saxena | [GitHub](https://github.com/HappySaxena) | `yield_cpu()`, `sleep_for()`, `fork_with_limit()`, `set_priority()` | Priority-based scheduler, resource limits |
 
 ---
 
-## 🚀 How to Run and Test
+## Architecture Overview
 
-### Prerequisites
-Ensure you have the RISC-V toolchain and QEMU installed.
+### Kernel Component Modifications
 
-### Build and Launch
-To ensure a clean build and test the Priority Scheduler correctly, run with a **single CPU**:
+The xv6 kernel was extended across multiple interconnected subsystems:
+
+| Layer | Components |
+|-------|-----------|
+| **User Space Programs** | alarm_test, mailboxtest, getprocinfo, syscall_test, semtest, testyield, testsleep, testforklimit, testpriority |
+| **User Library** | user.h, usys.pl (System Call Stubs), user.ld |
+| **System Call Layer** | System Call Dispatcher (syscall.c) \| System Call Handlers (sysproc.c) \| System Call Arguments (argint, argaddr...) |
+| **Process/Memory/Trap Management** | Process Mgmt (proc.c/h): Alarm state, Mailbox, Priority, Semaphores \| Memory Mgmt (vm.c): malloc/free \| Trap Handling (trap.c): Timer interrupts, Signal dispatch |
+| **Kernel Core** | Spinlocks (spinlock.c), Sleep/Wakeup (proc.c), Context Switching (swtch.S), Semaphore Management (sem.c) |
+| **Hardware (RISC-V)** | Timer Interrupts, CPU Registers, Memory Management Unit |
+
+### Key Data Structure: `struct proc` Extensions
+
+```c
+struct proc {
+    // ... original xv6 fields ...
+    
+    // Alarm signal (Sathish)
+    int alarm_interval;
+    uint64 alarm_handler;
+    int alarm_ticks_left;
+    int alarm_active;
+    struct trapframe *alarm_saved_tf;
+    
+    // Message passing IPC (Gaurav)
+    struct spinlock msg_lock;
+    int mailbox_full;
+    int mailbox_src_pid;
+    int mailbox_len;
+    char mailbox_data[128];
+    
+    // Process information (John)
+    int priority;
+    
+    // Syscall logger (Yesaswini)
+    char syscall_log[100];
+    int syscall_count;
+    
+    // Execution control (Happy)
+    int fork_limit;
+    int child_count;
+    
+    // ... semaphore fields (managed separately in sem.c) ...
+};
+```
+
+---
+
+## Common Kernel Patterns Used
+
+### 1. Trapframe Save/Restore (Alarm Signal)
+
+Used when temporarily redirecting process execution:
+
+```c
+// Save state
+memmove(p->alarm_saved_tf, p->trapframe, sizeof(struct trapframe));
+
+// Redirect to handler
+p->trapframe->epc = p->alarm_handler;
+
+// Later, restore state
+memmove(p->trapframe, p->alarm_saved_tf, sizeof(struct trapframe));
+```
+
+### 2. Sleep/Wakeup (Message IPC, Semaphores)
+
+For process synchronization:
+
+```c
+// Wait for condition
+sleep(&mailbox, &lock);  // Release lock, sleep, re-acquire on wakeup
+
+// Signal waiting process
+wakeup(&mailbox);        // Wake one process sleeping on this address
+```
+
+### 3. Kernel-User Data Transfer (Process Info)
+
+Safe boundary crossing:
+
+```c
+// Copy FROM user space TO kernel
+if (copyin(pagetable, dst, src, len) < 0) return -1;
+
+// Copy FROM kernel TO user space
+if (copyout(pagetable, dst, src, len) < 0) return -1;
+```
+
+### 4. Argument Marshaling (All System Calls)
+
+Retrieve syscall arguments from trapframe:
+
+```c
+int argint(int n, int *ip) { ... }     // Integer argument
+int argaddr(int n, uint64 *ip) { ... }  // Address argument
+int argstr(int n, char *buf, int max) { ... }  // String argument
+```
+
+### 5. Spinlock Protection
+
+Protect shared data during concurrent access:
+
+```c
+acquire(&lock);
+{
+    // Critical section - no interrupts, atomic access
+    shared_data++;
+}
+release(&lock);
+```
+
+---
+
+## System Calls Reference Table
+
+Quick lookup for all implemented system calls:
+
+| # | System Call | Arguments | Returns | Category | Contributor |
+|---|-------------|-----------|---------|----------|-------------|
+| 1 | `alarm_signal` | ticks, handler | 0 | Signals | Sathish |
+| 2 | `alarm_return` | - | prev_ret | Signals | Sathish |
+| 3 | `sendmsg` | pid, msg, len | 0/-1 | IPC | Gaurav |
+| 4 | `recvmsg` | src_pid, buf, maxlen | bytes/-1 | IPC | Gaurav |
+| 5 | `getppid` | - | parent_pid | Process Info | John |
+| 6 | `getprocinfo` | pid, info | 0/-1 | Process Info | John |
+| 7 | `yield_cpu` | - | 0 | Scheduling | Happy |
+| 8 | `sleep_for` | ticks | 0 | Scheduling | Happy |
+| 9 | `fork_with_limit` | limit | pid/0/-1 | Scheduling | Happy |
+| 10 | `set_priority` | pid, priority | 0/-1 | Scheduling | Happy |
+| 11 | `sem_init` | value | sem_id/-1 | Synch | Ishika |
+| 12 | `sem_wait` | sem_id | 0/-1 | Synch | Ishika |
+| 13 | `sem_signal` | sem_id | 0/-1 | Synch | Ishika |
+
+---
+
+## Troubleshooting
+
+### Build Fails with "make: qemu-system-riscv64 not found"
+
+**Solution**: Install QEMU:
+```bash
+sudo apt-get install qemu-system-misc
+```
+
+### QEMU starts but hangs during boot
+
+**Solution**: Try with explicit CPU count:
+```bash
+make clean && make CPUS=1 qemu
+```
+
+### System calls seem to hang (especially for synchronization tests)
+
+**Solution**: Verify `CPUS=1` is being used. Multi-CPU scenarios may exhibit timing-dependent issues.
+
+### Test program not found
+
+**Solution**: Ensure Makefile has the test in `UPROGS` list and was rebuilt:
 ```bash
 make clean
 make CPUS=1 qemu
-
-```
-### Testing the System Calls
-Once inside the xv6 shell, you can run the following test programs:
-```bash
-$ testyield
 ```
 
-```bash
-$ testsleep 50
+### Alarm tests show no output
+
+**Solution**: Alarm needs busy-loop to generate timer ticks. Check that test program contains:
+```c
+while (alarm_count < N) { }  // Busy loop - keeps CPU active
 ```
 
-```bash
-$ testforklimit 2
-```
+### Mailbox test shows "second send blocks forever"
 
-```bash
-$ testpriority 5 10 20
-```
+**Solution**: Without a second process receiving, sender blocks indefinitely. This is correct behavior—mailbox is one-slot and blocking.
 
->>>>>>> Stashed changes
+---
+
+## Performance Characteristics
+
+| System Call | Overhead | Notes |
+|------------|----------|-------|
+| Alarm signal | ~2 spinlock cycles + trapframe copy | High overhead only on alarm fire |
+| sendmsg/recvmsg | ~10 spinlock cycles + memcpy | Blocks if mailbox full/empty |
+| getprocinfo | O(NPROC) table scan | Lightweight; only at getprocinfo call |
+| Syscall logger | ~1 buffer write per syscall | Negligible in non-logger systems |
+| Semaphore operations | ~5 spinlock cycles | Blocks only if counter ≤ 0 |
+| set_priority | O(1) priority update | Scheduler uses new priority on next context switch |
+
+
+
+## References
+
+- xv6 (MIT PDOS): https://pdos.csail.mit.edu/6.828/2021/xv6.html
+- xv6-riscv source: https://github.com/mit-pdos/xv6-riscv
+- xv6 book (RISC-V): https://pdos.csail.mit.edu/6.S081/2021/xv6/book-riscv-rev2.pdf
+- RISC-V privileged ISA: https://riscv.org/specifications/privileged-isa/

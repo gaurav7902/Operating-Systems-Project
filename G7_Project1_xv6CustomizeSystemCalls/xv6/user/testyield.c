@@ -16,6 +16,7 @@ int main() {
             printf("Child  (PID %d): iteration %d\n", getpid(), i);
             yield_cpu(); // Immediately give up the CPU
         } else {
+            wait(0);
             printf("Parent (PID %d): iteration %d\n", getpid(), i);
             yield_cpu(); // Immediately give up the CPU
         }

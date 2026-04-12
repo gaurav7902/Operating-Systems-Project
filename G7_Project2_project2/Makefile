@@ -4,6 +4,7 @@ TARGET = scheduler_app
 
 SOURCES = \
 	main.c \
+	src/input.c \
 	src/report.c \
 	src/algorithms/edf.c \
 	src/algorithms/lottery.c \

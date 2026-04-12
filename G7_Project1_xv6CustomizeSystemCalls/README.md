@@ -1,5 +1,5 @@
-<<<<<<< Updated upstream
- Updated upstream
+
+
 # Alarm Signal — xv6 Custom System Call Project  --Sathish
 **Theme:** Kernel-level Process Control and Signal Handling
 ---

@@ -30,6 +30,11 @@ G7_Project2_project2/
 ├── README.md
 ├── main.c
 ├── example_processes_data.txt
+├── screenshots/
+│   ├── edf_with_dummy.jpeg
+│   ├── edf_with_input.jpeg
+│   ├── lottery_with_dummy.jpeg
+│   └── mlfq_with_dummy.jpeg
 ├── include/
 │   ├── scheduler_types.h
 │   ├── scheduler_report.h
@@ -179,6 +184,24 @@ make
 make run
 make clean
 ```
+
+## Demo Output Screenshots
+
+### EDF with Dummy Input
+
+![EDF with dummy input](screenshots/edf_with_dummy.jpeg)
+
+### EDF with Manual Input
+
+![EDF with manual input](screenshots/edf_with_input.jpeg)
+
+### Lottery with Dummy Input
+
+![Lottery with dummy input](screenshots/lottery_with_dummy.jpeg)
+
+### MLFQ with Dummy Input
+
+![MLFQ with dummy input](screenshots/mlfq_with_dummy.jpeg)
 
 ## How To Demonstrate For Evaluation
 

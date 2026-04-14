@@ -653,8 +653,6 @@ $ testpriority 5 10 20
 - **testforklimit**: Creates exactly N children, 3rd fork fails or blocks
 - **testpriority**: Higher-priority processes complete sooner
 
-![Scheduling demo output](screenshots/edf_algo.jpeg)
-
 ---
 
 ## Building and Running
@@ -693,6 +691,8 @@ sudo apt-get install build-essential git gdb-multiarch qemu-system-misc gcc-risc
    init: starting sh
    $
    ```
+
+   ![Building and booting xv6](screenshots/execution_control/compile_and_run_xv6.png)
 
 ### Demonstrations
 
@@ -745,6 +745,22 @@ $ testsleep 50        # Sleep for 50 ticks
 $ testforklimit 2     # Fork with limit of 2 children
 $ testpriority 5 10 20  # Priority-based scheduling
 ```
+
+**testyield Output**:
+
+![testyield output](screenshots/execution_control/testyield.png)
+
+**testsleep Output**:
+
+![testsleep output](screenshots/execution_control/testsleep.png)
+
+**testforklimit Output**:
+
+![testforklimit output](screenshots/execution_control/testforklimit.png)
+
+**testpriority Output**:
+
+![testpriority output](screenshots/execution_control/testpriority.png)
 
 ### Exiting QEMU
 
